@@ -266,11 +266,13 @@ class GraphEdgePredecessorMapping(MutableMapping):
         self.gorm = gorm
         self.graph = graph
 
-    def __getitem__(self, key):
-        if self.gorm.node_exists(self.graph, key):
-            return GraphEdgeSuccessorMapping(self.gorm, self.graph, key)
-        else:
+    def __getitem__(self, nodeA):
+        if not self.gorm.node_exists(self.graph, nodeA):
             raise KeyError("No such node")
+        for nodeB in self.gorm.cache['edge_var'][self.graph][nodeA]:
+            if self.gorm.edge_exists(self.graph, nodeA, nodeB):
+                return GraphEdgeSuccessorMapping(self.gorm, self.graph, nodeA)
+        raise KeyError("No edges from node")
 
     def __setitem__(self, key, value):
         mapping = self[key]
@@ -278,4 +280,14 @@ class GraphEdgePredecessorMapping(MutableMapping):
             mapping[k] = v
 
     def __iter__(self):
-        for node in self.gorm.cache['node_var']:
+        for nodeA in self.gorm.cache['edge_var'][self.graph]:
+            for nodeB in self.gorm.cache['edge_var'][self.graph][nodeA]:
+                if self.gorm.edge_exists(self.graph, nodeA, nodeB):
+                    yield nodeA
+                    break
+
+    def __len__(self):
+        i = 0
+        for node in iter(self):
+            i += 1
+        return i
