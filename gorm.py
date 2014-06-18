@@ -237,7 +237,10 @@ class Gorm(object):
         rev = self.cache['rev']
         if graph not in self.cache['edge_val']:
             raise KeyError("No such graph")
-        if not (self.node_exists(graph, nodeA) and self.node_exists(graph, nodeB)):
+        if not (
+                self.node_exists(graph, nodeA) and
+                self.node_exists(graph, nodeB)
+        ):
             return False
         if (
                 nodeA not in self.cache['edge_val'][graph] or
