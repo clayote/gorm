@@ -1,4 +1,6 @@
 from util import value_during
+from pickle import Pickler, Unpickler
+from StringIO import StringIO
 from graph import Graph
 from digraph import DiGraph
 from multigraph import MultiGraph
@@ -13,8 +15,32 @@ sql_types = {
 }
 
 
+def pickled(v):
+    io = StringIO()
+    pck = Pickler(io)
+    pck.dump(v)
+    r = io.getvalue()
+    io.close()
+    return r
+
+
+def unpickled(s):
+    io = StringIO(s)
+    upck = Unpickler(io)
+    r = upck.load()
+    io.close()
+    return r
+
+
 class Gorm(object):
-    def __init__(self, connector=None, cache=None, sql_flavor='sqlite'):
+    def __init__(
+            self,
+            connector=None,
+            cache=None,
+            sql_flavor='sqlite',
+            disable_pickling=False
+    ):
+        self.pickling = not disable_pickling
         if sql_flavor not in sql_types:
             raise ValueError("Unknown SQL flavor")
         self.sql_flavor = sql_flavor
@@ -54,7 +80,10 @@ class Gorm(object):
             "CREATE TABLE global ("
             "key {text} NOT NULL, "
             "value {text} NOT NULL, "
-            "PRIMARY KEY (key)"
+            "type {text} NOT NULL, "
+            "PRIMARY KEY (key), "
+            "CHECK(type IN "
+            "('pickle', 'str', 'unicode', 'int', 'float', 'bool'))"
             ");",
             "CREATE TABLE graph ("
             "graph {text} NOT NULL, "
@@ -75,9 +104,12 @@ class Gorm(object):
             "key {text}, "
             "branch {text} NOT NULL DEFAULT 'master', "
             "rev {integer} NOT NULL DEFAULT 0, "
-            "value, "
+            "value {text}, "
+            "type {text} NOT NULL, "
             "PRIMARY KEY(graph, node, key, branch, rev),"
-            "FOREIGN KEY(graph) REFERENCES graph(graph)"
+            "FOREIGN KEY(graph) REFERENCES graph(graph), "
+            "CHECK(type IN "
+            "('pickle', 'str', 'unicode', 'int', 'float', 'bool'))"
             ");",
             # The value for the null key is set to 1 when the node
             # exists, and 0 when it doesn't. Setting any key's value
@@ -92,7 +124,10 @@ class Gorm(object):
             "branch {text} NOT NULL DEFAULT 'master', "
             "rev {integer} NOT NULL DEFAULT 0, "
             "value {text}, "
+            "type {text} NOT NULL, "
             "PRIMARY KEY(graph, nodeA, nodeB, idx, key, branch, rev), "
+            "CHECK(type IN "
+            "('pickle', 'str', 'unicode', 'int', 'float', 'bool')),"
             "CHECK(nodeA<>nodeB));"
             # The existence of a portal implies the existence of its
             # endpoints, even if one or both of them have been
@@ -114,6 +149,46 @@ class Gorm(object):
 
     def load_graph_branch(self, graph, branch):
         pass
+
+    def cast_value(self, value, typestr):
+        """Return ``value`` cast into the type indicated by ``typestr``"""
+        if typestr == 'pickle':
+            if self.pickling:
+                return unpickled(value)
+            else:
+                raise TypeError(
+                    "This value is pickled, but pickling is disabled"
+                )
+        else:
+            return {
+                'bool': bool,
+                'int': int,
+                'float': float,
+                'str': str,
+                'unicode': unicode
+            }[typestr](value)
+
+    def stringify_value(self, value):
+        """Return a pair of a string representing the value, and another
+        string describing its type (for use with ``cast_value``)
+
+        """
+        d = {
+            bool: 'bool',
+            int: 'int',
+            float: 'float',
+            str: 'str',
+            unicode: 'unicode'
+        }
+        if type(value) in d:
+            return (value, d[type(value)])
+        elif self.pickling:
+            return (pickled(value), 'pickle')
+        else:
+            raise TypeError(
+                "Value isn't primitive, and I won't "
+                "pickle it because you have pickling disabled."
+            )
 
     def value_during(self, keys, branch, rev):
         def value_during_recurse(skel, branch, rev):
