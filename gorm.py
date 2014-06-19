@@ -1,10 +1,11 @@
 from util import value_during
 from pickle import Pickler, Unpickler
 from StringIO import StringIO
-from graph import Graph
-from digraph import DiGraph
-from multigraph import MultiGraph
-from multidigraph import MultiDiGraph
+from record import EdgeRecord
+from graph import (
+    Graph,
+    MultiGraph
+)
 
 
 sql_types = {
@@ -52,7 +53,9 @@ class Gorm(object):
         if cache is None:
             self.cache = {
                 'node_val': {},
-                'edge_val': {}
+                'edge_val': {},
+                'graph_val': {},
+                'graphs': {}
             }
         else:
             self.cache = cache
@@ -250,3 +253,33 @@ class Gorm(object):
             return False
         skel = self.cache['edge_val'][graph][nodeA][nodeB][idx][None]
         return value_during(skel, self.cache['branch_tree'], branch, rev)
+
+    def set_record(self, rec, do_write=True, reciprocate=True):
+        keys = list(rec.keynames)
+        finalkey = keys.pop()
+        skel = self.cache
+        while keys:
+            k = keys.pop(0)
+            if k not in skel:
+                skel[k] = {}
+            skel = skel[k]
+        skel[finalkey] = rec
+        if do_write:
+            self.cursor.execute(rec.sql_del, rec.key)
+            self.cursor.execute(rec.sql_ins, rec)
+        if (
+                reciprocate and
+                isinstance(rec, EdgeRecord) and
+                self.cache['graphs'][rec.graph].__class__ in (
+                    Graph,
+                    MultiGraph
+                )  # not directed
+        ):
+            self.set_record(
+                rec._replace(
+                    nodeB=rec.nodeA,
+                    nodeA=rec.nodeB
+                ),
+                do_write=False,
+                reciprocate=False
+            )
