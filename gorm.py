@@ -127,8 +127,8 @@ class Gorm(object):
             "type {text} NOT NULL, "
             "PRIMARY KEY(graph, nodeA, nodeB, idx, key, branch, rev), "
             "CHECK(type IN "
-            "('pickle', 'str', 'unicode', 'int', 'float', 'bool')),"
-            "CHECK(nodeA<>nodeB));"
+            "('pickle', 'str', 'unicode', 'int', 'float', 'bool'))"
+            ");"
             # The existence of a portal implies the existence of its
             # endpoints, even if one or both of them have been
             # previously declared not to exist. They do now.
