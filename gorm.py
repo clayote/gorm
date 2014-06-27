@@ -51,6 +51,8 @@ class ORM(object):
     }
     def __init__(
             self,
+            branch='master',
+            rev=0,
             connector=None,
             cache=None,
             sql_flavor='sqlite',
@@ -67,10 +69,10 @@ class ORM(object):
             self.connector = connector
         if cache is None:
             self.cache = {
-                'node_val': {},
-                'edge_val': {},
-                'graph_val': {},
-                'graphs': {}
+                'graphs': {},
+                'branches': {},
+                'branch': branch,
+                'rev': rev
             }
         else:
             self.cache = cache
