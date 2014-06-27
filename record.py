@@ -14,7 +14,7 @@ class Record(tuple):
 
         """
         return "INSERT INTO {} ({}) VALUES ({})".format(
-            self.name,
+            self.table,
             ", ".join(f for f in self.fields if getattr(self, f) is not None),
             ", ".join("?" for f in self.fields if getattr(self, f) is not None)
         )
@@ -34,7 +34,7 @@ class Record(tuple):
         else:
             kns = self.fields
         return "DELETE FROM {} WHERE {};".format(
-            self.name,
+            self.table,
             " AND ".join(
                 "{}={}".format(kn, "?") for kn in kns
             )
@@ -87,7 +87,7 @@ class Record(tuple):
 
     def __repr__(self):
         return "{}({})".format(
-            self.name,
+            self.table,
             ", ".join(
                 "{}={}".format(field, getattr(self, field))
                 for field in self.fields
@@ -102,8 +102,24 @@ class Record(tuple):
         return result
 
 
+class NodeRecord(Record):
+    table = 'nodes'
+    fields = [
+        'graph',
+        'node',
+        'branch',
+        'rev',
+        'exists'
+    ]
+    keynames = [
+        'graph',
+        'node',
+        'branch',
+        'rev'
+    ]
+
 class NodeValRecord(Record):
-    name = 'node_val'
+    table = 'node_val'
     fields = [
         'graph',
         'node',
@@ -122,8 +138,30 @@ class NodeValRecord(Record):
     ]
 
 
+class EdgeRecord(Record):
+    table = 'edges'
+    fields = [
+        'graph',
+        'nodeA',
+        'nodeB',
+        'idx',
+        'branch',
+        'rev',
+        'exists'
+    ]
+    keynames = [
+        'graph',
+        'nodeA',
+        'nodeB',
+        'idx',
+        'key',
+        'branch',
+        'rev'
+    ]
+
+
 class EdgeValRecord(Record):
-    name = 'edge_val'
+    table = 'edge_val'
     fields = [
         'graph',
         'nodeA',
@@ -147,7 +185,7 @@ class EdgeValRecord(Record):
 
 
 class GraphRecord(Record):
-    name = 'graph'
+    table = 'graph'
     fields = [
         'graph',
         'type'
@@ -158,7 +196,7 @@ class GraphRecord(Record):
 
 
 class GraphValRecord(Record):
-    name = 'graph_val'
+    table = 'graph_val'
     fields = [
         'graph',
         'key',
@@ -175,7 +213,7 @@ class GraphValRecord(Record):
 
 
 class BranchRecord(Record):
-    name = 'branch'
+    table = 'branch'
     fields = [
         'branch',
         'parent',
