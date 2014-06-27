@@ -1,10 +1,11 @@
-from util import value_during
 from pickle import Pickler, Unpickler
 from StringIO import StringIO
-from record import EdgeRecord
+from record import EdgeValRecord
 from graph import (
     Graph,
-    MultiGraph
+    DiGraph,
+    MultiGraph,
+    MultiDiGraph
 )
 
 
