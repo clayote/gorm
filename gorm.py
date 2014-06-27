@@ -214,28 +214,15 @@ class ORM(object):
                     "This value is pickled, but pickling is disabled"
                 )
         else:
-            return {
-                'bool': bool,
-                'int': int,
-                'float': float,
-                'str': str,
-                'unicode': unicode
-            }[typestr](value)
+            return self.str2type[typestr](value)
 
     def stringify_value(self, value):
         """Return a pair of a string representing the value, and another
         string describing its type (for use with ``cast_value``)
 
         """
-        d = {
-            bool: 'bool',
-            int: 'int',
-            float: 'float',
-            str: 'str',
-            unicode: 'unicode'
-        }
-        if type(value) in d:
-            return (value, d[type(value)])
+        if type(value) in self.type2str:
+            return (value, self.type2str[type(value)])
         elif self.pickling:
             return (pickled(value), 'pickle')
         else:
