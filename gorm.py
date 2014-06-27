@@ -13,6 +13,7 @@ sql_types = {
     'sqlite': {
         'text': 'TEXT',
         'integer': 'INTEGER',
+        'boolean': 'BOOLEAN'
     }
 }
 
