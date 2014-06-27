@@ -34,15 +34,29 @@ def unpickled(s):
     return r
 
 
-class Gorm(object):
+class ORM(object):
+    str2type = {
+        'bool': bool,
+        'int': int,
+        'float': float,
+        'str': str,
+        'unicode': unicode
+    }
+    type2str = {
+        bool: 'bool',
+        int: 'int',
+        float: 'float',
+        str: 'str',
+        unicode: 'unicode'
+    }
     def __init__(
             self,
             connector=None,
             cache=None,
             sql_flavor='sqlite',
-            disable_pickling=False
+            pickling=False
     ):
-        self.pickling = not disable_pickling
+        self.pickling = pickling
         if sql_flavor not in sql_types:
             raise ValueError("Unknown SQL flavor")
         self.sql_flavor = sql_flavor
