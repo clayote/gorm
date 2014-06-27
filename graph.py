@@ -262,7 +262,7 @@ class GraphEdgeMapping(MutableMapping):
                 type=self.gorm.type2str[type(value)]
             ))
 
-    class EdgeBackward(GraphEdgeMapping.Edge):
+    class EdgeBackward(Edge):
         """Edge with the nodeA and nodeB reversed, for predecessor maps."""
         def __init__(self, graph, nodeB, nodeA, idx=0, existence=None, data=None):
             return super(GraphEdgeMapping.Edge, self).__init__(
