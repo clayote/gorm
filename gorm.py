@@ -88,6 +88,22 @@ class ORM(object):
             self.initdb()
             self.fetch_globals()
 
+    def __exit__(self):
+        self.close()
+
+    def writerec(self, rec):
+        """Write the record into the SQL database, first deleting any existing
+        record with a matching key.
+
+        """
+        self.cursor.execute(rec.sql_del, rec.key)
+        self.cursor.execute(rec.sql_ins, rec)
+
+    def close(self):
+        self.connection.commit()
+        self.cursor.close()
+        self.connection.close()
+
     def fetch_globals(self):
         self.cursor.execute(
             "SELECT key, value FROM global;"
@@ -210,93 +226,5 @@ class ORM(object):
                 "pickle it because you have pickling disabled."
             )
 
-    def value_during(self, keys, branch, rev):
-        def value_during_recurse(skel, branch, rev):
-            if branch not in self._branches_loaded:
-                self.load_graph_branch(keys[1], branch)
-            if branch in skel:
-                if rev in skel[branch]:
-                    return skel[branch][rev].value
-                return skel[branch][max(
-                    r for r in skel[branch]
-                    if r < rev
-                )].value
-            elif branch == "master":
-                raise KeyError("Could not find value")
-            else:
-                tree = self.cache['branch_tree'][branch]
-                return value_during_recurse(
-                    skel,
-                    tree.parent,
-                    tree.rev - 1
-                )
-        skel = self.cache[keys.pop(0)]
-        while keys:
-            skel = skel[keys.pop(0)]
-        return value_during_recurse(skel, branch, rev)
-
-    def current_value(self, *keys):
-        return self.value_during(
-            keys,
-            self.cache['branch'],
-            self.cache['rev']
-        )
-
-    def node_exists(self, graph, node):
-        branch = self.cache['branch']
-        rev = self.cache['rev']
-        if graph not in self.cache['node_val']:
-            raise KeyError("No such graph")
-        if node not in self.cache['node_val'][graph]:
-            return False
-        skel = self.cache['node_val'][graph][node][None]
-        return value_during(skel, self.cache['branch_tree'], branch, rev)
-
-    def edge_exists(self, graph, nodeA, nodeB, idx=0):
-        branch = self.cache['branch']
-        rev = self.cache['rev']
-        if graph not in self.cache['edge_val']:
-            raise KeyError("No such graph")
-        if not (
-                self.node_exists(graph, nodeA) and
-                self.node_exists(graph, nodeB)
         ):
-            return False
-        if (
-                nodeA not in self.cache['edge_val'][graph] or
-                nodeB not in self.cache['edge_val'][graph][nodeA] or
-                idx not in self.cache['edge_val'][graph][nodeA][nodeB]
-        ):
-            return False
-        skel = self.cache['edge_val'][graph][nodeA][nodeB][idx][None]
-        return value_during(skel, self.cache['branch_tree'], branch, rev)
-
-    def set_record(self, rec, do_write=True, reciprocate=True):
-        keys = list(rec.keynames)
-        finalkey = keys.pop()
-        skel = self.cache
-        while keys:
-            k = keys.pop(0)
-            if k not in skel:
-                skel[k] = {}
-            skel = skel[k]
-        skel[finalkey] = rec
-        if do_write:
-            self.cursor.execute(rec.sql_del, rec.key)
-            self.cursor.execute(rec.sql_ins, rec)
-        if (
-                reciprocate and
-                isinstance(rec, EdgeRecord) and
-                self.cache['graphs'][rec.graph].__class__ in (
-                    Graph,
-                    MultiGraph
-                )  # not directed
-        ):
-            self.set_record(
-                rec._replace(
-                    nodeB=rec.nodeA,
-                    nodeA=rec.nodeB
-                ),
-                do_write=False,
-                reciprocate=False
             )
