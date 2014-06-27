@@ -231,5 +231,33 @@ class ORM(object):
                 "pickle it because you have pickling disabled."
             )
 
+    def new_graph(self, name, type_s='Graph', data=None, **attr):
+        if type_s not in (
+                'Graph',
+                'DiGraph',
+                'MultiGraph',
+                'MultiDiGraph'
         ):
+            raise ValueError(
+                "Acceptable type strings: 'Graph', 'DiGraph', 'MultiGraph', 'MultiDiGraph'"
             )
+        self.cursor.execute(
+            "INSERT INTO graph (graph, type) VALUES (?, ?);",
+            (name, type_s)
+        )
+        return {
+            'Graph': Graph,
+            'DiGraph': DiGraph,
+            'MultiGraph': MultiGraph,
+            'MultiDiGraph': MultiDiGraph
+        }[type_s](self, name, data, **attr)
+
+    def get_graph(self, name):
+        self.cursor.execute("SELECT type FROM graph WHERE name=?;", (name,))
+        (type_s,) = self.cursor.fetchone()
+        return {
+            'Graph': Graph,
+            'DiGraph': DiGraph,
+            'MultiGraph': MultiGraph,
+            'MultiDiGraph': MultiDiGraph
+        }[type_s](self, name)
