@@ -121,36 +121,53 @@ class ORM(object):
             "CHECK(type IN "
             "('pickle', 'str', 'unicode', 'int', 'float', 'bool'))"
             ");",
-            "CREATE TABLE graph ("
+            "CREATE TABLE graphs ("
             "graph {text} NOT NULL, "
             "type {text} NOT NULL DEFAULT 'Graph', "
             "PRIMARY KEY(graph), "
-            "CHECK(type IN 'Graph', 'DiGraph', 'MultiGraph', 'MultiDiGraph')"
+            "CHECK(type IN ('Graph', 'DiGraph', 'MultiGraph', 'MultiDiGraph'))"
             ");",
-            "CREATE TABLE branch ("
+            "CREATE TABLE branches ("
             "branch {text} NOT NULL DEFAULT 'master', "
             "parent {text} NOT NULL DEFAULT 'master', "
             "parent_rev {integer} NOT NULL DEFAULT 0, "
             "PRIMARY KEY(branch), "
-            "FOREIGN KEY parent REFERENCES branch(branch)"
+            "FOREIGN KEY(parent) REFERENCES branch(branch)"
             ");",
+            "CREATE TABLE nodes ("
+            "graph {text} NOT NULL, "
+            "node {text} NOT NULL, "
+            "branch {text} NOT NULL DEFAULT 'master', "
+            "rev {integer} NOT NULL DEFAULT 0, "
+            "exists {boolean} NOT NULL, "
+            "PRIMARY KEY (graph, node, branch, rev), "
+            "FOREIGN KEY(graph) REFERENCES graphs(graph)"
+            ");"
             "CREATE TABLE node_val ("
             "graph {text} NOT NULL, "
             "node {text} NOT NULL, "
-            "key {text}, "
+            "key {text} NOT NULL, "
             "branch {text} NOT NULL DEFAULT 'master', "
             "rev {integer} NOT NULL DEFAULT 0, "
             "value {text}, "
             "type {text} NOT NULL, "
-            "PRIMARY KEY(graph, node, key, branch, rev),"
-            "FOREIGN KEY(graph) REFERENCES graph(graph), "
+            "PRIMARY KEY(graph, node, key, branch, rev), "
+            "FOREIGN KEY(graph, node) REFERENCES nodes(graph, node), "
             "CHECK(type IN "
             "('pickle', 'str', 'unicode', 'int', 'float', 'bool'))"
             ");",
-            # The value for the null key is set to 1 when the node
-            # exists, and 0 when it doesn't. Setting any key's value
-            # to None (ie. null) is equivalent to deleting the key at
-            # that revision.
+            "CREATE TABLE edges ("
+            "graph {text} NOT NULL, "
+            "nodeA {text} NOT NULL, "
+            "nodeB {text} NOT NULL, "
+            "idx {integer} NOT NULL DEFAULT 0, "
+            "branch {text} NOT NULL DEFAULT 'master', "
+            "rev {integer} NOT NULL DEFAULT 0, "
+            "exists {boolean} NOT NULL, "
+            "PRIMARY KEY (graph, nodeA, nodeB, idx, branch, rev), "
+            "FOREIGN KEY(graph, nodeA) REFERENCES nodes(graph, node), "
+            "FOREIGN KEY(graph, nodeB) REFERENCES nodes(graph, node)"
+            ");",
             "CREATE TABLE edge_val ("
             "graph {text} NOT NULL, "
             "nodeA {text} NOT NULL, "
@@ -162,21 +179,22 @@ class ORM(object):
             "value {text}, "
             "type {text} NOT NULL, "
             "PRIMARY KEY(graph, nodeA, nodeB, idx, key, branch, rev), "
+            "FOREIGN KEY(graph, nodeA, nodeB, idx) "
+            "REFERENCES edges(graph, nodeA, nodeB, idx), "
             "CHECK(type IN "
             "('pickle', 'str', 'unicode', 'int', 'float', 'bool'))"
             ");"
-            # The existence of a portal implies the existence of its
-            # endpoints, even if one or both of them have been
-            # previously declared not to exist. They do now.
         ]
         for decl in tabdecls:
-            self.cursor.execute(decl.format(**sql_types[self.sql_flavor]))
+            s = decl.format(**sql_types[self.sql_flavor])
+            print(s)
+            self.cursor.execute(s)
         globs = [
-            ("branch", "master"),
-            ("tick", 0)
+            ("branch", "master", "str"),
+            ("tick", 0, "int")
         ]
         self.cursor.executemany(
-            "INSERT INTO global VALUES (?, ?);",
+            "INSERT INTO global (key, value, type) VALUES (?, ?, ?);",
             globs
         )
 
