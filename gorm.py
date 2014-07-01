@@ -1,21 +1,13 @@
 from pickle import Pickler, Unpickler
+from json import dumps as jsonned
+from json import loads as unjsonned
 from StringIO import StringIO
-from record import EdgeValRecord
 from graph import (
     Graph,
     DiGraph,
     MultiGraph,
     MultiDiGraph
 )
-
-
-sql_types = {
-    'sqlite': {
-        'text': 'TEXT',
-        'integer': 'INTEGER',
-        'boolean': 'BOOLEAN'
-    }
-}
 
 
 def pickled(v):
@@ -50,17 +42,23 @@ class ORM(object):
         str: 'str',
         unicode: 'unicode'
     }
+    sql_types = {
+        'sqlite': {
+            'text': 'TEXT',
+            'integer': 'INTEGER',
+            'boolean': 'BOOLEAN',
+            'true': '1',
+            'false': '0'
+        }
+    }
     def __init__(
             self,
-            branch='master',
-            rev=0,
             connector=None,
-            cache=None,
             sql_flavor='sqlite',
             pickling=False
     ):
         self.pickling = pickling
-        if sql_flavor not in sql_types:
+        if sql_flavor not in self.sql_types:
             raise ValueError("Unknown SQL flavor")
         self.sql_flavor = sql_flavor
         if connector is None:
@@ -68,65 +66,56 @@ class ORM(object):
             self.connector = connect(':memory:')
         else:
             self.connector = connector
-        if cache is None:
-            self.cache = {
-                'graphs': {},
-                'branches': {},
-                'branch': branch,
-                'rev': rev
-            }
-        else:
-            self.cache = cache
         self.cursor = self.connector.cursor()
-        try:
-            self.fetch_globals()
-        except:
-            # What exceptions to catch depends on what SQL
-            # flavor. I'm not presently literate enough about
-            # database flavors to tell what I need to handle
-            # exactly, so I'm just going to assume the database
-            # isn't initialized. Revisit soon.
-            self.initdb()
-            self.fetch_globals()
 
-    def __exit__(self):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
         self.close()
 
-    def writerec(self, rec):
-        """Write the record into the SQL database, first deleting any existing
-        record with a matching key.
+    @property
+    def branch(self):
+        self.cursor.execute(
+            "SELECT value FROM global WHERE key='branch';"
+        )
+        return self.cursor.fetchone()[0]
 
-        """
-        self.cursor.execute(rec.sql_del, rec.key)
-        self.cursor.execute(rec.sql_ins, rec)
+    @branch.setter
+    def branch(self, v):
+        self.cursor.execute(
+            "UPDATE global SET value=? WHERE key='branch';",
+            (v,)
+        )
+
+    @property
+    def rev(self):
+        self.cursor.execute(
+            "SELECT value FROM global WHERE key='rev';"
+        )
+        return int(self.cursor.fetchone()[0])
+
+    @rev.setter
+    def rev(self, v):
+        self.cursor.execute(
+            "UPDATE global SET value=? WHERE key='rev';",
+            (v,)
+        )
 
     def close(self):
-        self.connection.commit()
+        # maybe these should be in the opposite order?
+        self.connector.commit()
         self.cursor.close()
-        self.connection.close()
-
-    def fetch_globals(self):
-        self.cursor.execute(
-            "SELECT key, value FROM global;"
-        )
-        for (k, v) in self.cursor:
-            self.cache[k] = v
 
     def initdb(self):
         tabdecls = [
             "CREATE TABLE global ("
             "key {text} NOT NULL, "
-            "value {text} NOT NULL, "
+            "value {text}, "
             "type {text} NOT NULL, "
             "PRIMARY KEY (key), "
             "CHECK(type IN "
-            "('pickle', 'str', 'unicode', 'int', 'float', 'bool'))"
-            ");",
-            "CREATE TABLE graphs ("
-            "graph {text} NOT NULL, "
-            "type {text} NOT NULL DEFAULT 'Graph', "
-            "PRIMARY KEY(graph), "
-            "CHECK(type IN ('Graph', 'DiGraph', 'MultiGraph', 'MultiDiGraph'))"
+            "('pickle', 'json', 'str', 'unicode', 'int', 'float', 'bool', 'unset'))"
             ");",
             "CREATE TABLE branches ("
             "branch {text} NOT NULL DEFAULT 'master', "
@@ -135,15 +124,36 @@ class ORM(object):
             "PRIMARY KEY(branch), "
             "FOREIGN KEY(parent) REFERENCES branch(branch)"
             ");",
+            "CREATE TABLE graphs ("
+            "graph {text} NOT NULL, "
+            "type {text} NOT NULL DEFAULT 'Graph', "
+            "PRIMARY KEY(graph), "
+            "CHECK(type IN ('Graph', 'DiGraph', 'MultiGraph', 'MultiDiGraph'))"
+            ");",
+            "INSERT INTO branches DEFAULT VALUES;",
+            "CREATE TABLE graph_val ("
+            "graph {text} NOT NULL, "
+            "key {text} NOT NULL, "
+            "branch {text} NOT NULL DEFAULT 'master', "
+            "rev {integer} NOT NULL DEFAULT 0, "
+            "value {text}, "
+            "type {text} NOT NULL, "
+            "PRIMARY KEY (graph, key, branch, rev), "
+            "FOREIGN KEY(graph) REFERENCES graphs(graph), "
+            "FOREIGN KEY(branch) REFERENCES branches(branch), "
+            "CHECK(type IN "
+            "('pickle', 'json', 'str', 'unicode', 'int', 'float', 'bool', 'unset'))"
+            ");",
             "CREATE TABLE nodes ("
             "graph {text} NOT NULL, "
             "node {text} NOT NULL, "
             "branch {text} NOT NULL DEFAULT 'master', "
             "rev {integer} NOT NULL DEFAULT 0, "
-            "exists {boolean} NOT NULL, "
+            "extant {boolean} NOT NULL, "
             "PRIMARY KEY (graph, node, branch, rev), "
-            "FOREIGN KEY(graph) REFERENCES graphs(graph)"
-            ");"
+            "FOREIGN KEY(graph) REFERENCES graphs(graph), "
+            "FOREIGN KEY(branch) REFERENCES branches(branch)"
+            ");",
             "CREATE TABLE node_val ("
             "graph {text} NOT NULL, "
             "node {text} NOT NULL, "
@@ -154,8 +164,9 @@ class ORM(object):
             "type {text} NOT NULL, "
             "PRIMARY KEY(graph, node, key, branch, rev), "
             "FOREIGN KEY(graph, node) REFERENCES nodes(graph, node), "
+            "FOREIGN KEY(branch) REFERENCES branches(branch), "
             "CHECK(type IN "
-            "('pickle', 'str', 'unicode', 'int', 'float', 'bool'))"
+            "('pickle', 'json', 'str', 'unicode', 'int', 'float', 'bool', 'unset'))"
             ");",
             "CREATE TABLE edges ("
             "graph {text} NOT NULL, "
@@ -164,10 +175,11 @@ class ORM(object):
             "idx {integer} NOT NULL DEFAULT 0, "
             "branch {text} NOT NULL DEFAULT 'master', "
             "rev {integer} NOT NULL DEFAULT 0, "
-            "exists {boolean} NOT NULL, "
+            "extant {boolean} NOT NULL, "
             "PRIMARY KEY (graph, nodeA, nodeB, idx, branch, rev), "
             "FOREIGN KEY(graph, nodeA) REFERENCES nodes(graph, node), "
-            "FOREIGN KEY(graph, nodeB) REFERENCES nodes(graph, node)"
+            "FOREIGN KEY(graph, nodeB) REFERENCES nodes(graph, node), "
+            "FOREIGN KEY(branch) REFERENCES branches(branch)"
             ");",
             "CREATE TABLE edge_val ("
             "graph {text} NOT NULL, "
@@ -182,28 +194,30 @@ class ORM(object):
             "PRIMARY KEY(graph, nodeA, nodeB, idx, key, branch, rev), "
             "FOREIGN KEY(graph, nodeA, nodeB, idx) "
             "REFERENCES edges(graph, nodeA, nodeB, idx), "
+            "FOREIGN KEY(branch) REFERENCES branches(branch), "
             "CHECK(type IN "
-            "('pickle', 'str', 'unicode', 'int', 'float', 'bool'))"
+            "('pickle', 'json', 'str', 'unicode', 'int', 'float', 'bool', 'unset'))"
             ");"
         ]
         for decl in tabdecls:
-            s = decl.format(**sql_types[self.sql_flavor])
+            s = decl.format(**self.sql_types[self.sql_flavor])
             print(s)
             self.cursor.execute(s)
         globs = [
             ("branch", "master", "str"),
-            ("tick", 0, "int")
+            ("rev", 0, "int")
         ]
         self.cursor.executemany(
             "INSERT INTO global (key, value, type) VALUES (?, ?, ?);",
             globs
         )
 
-    def load_graph(self, graph):
-        self.load_graph_branch(graph, self.cache['branch'])
-
-    def load_graph_branch(self, graph, branch):
-        pass
+    def parent(self, branch):
+        self.cursor.execute(
+            "SELECT branch, parent FROM branches WHERE branch=?;",
+            (branch,)
+        )
+        return self.cursor.fetchone()[1]
 
     def cast_value(self, value, typestr):
         """Return ``value`` cast into the type indicated by ``typestr``"""
@@ -214,6 +228,8 @@ class ORM(object):
                 raise TypeError(
                     "This value is pickled, but pickling is disabled"
                 )
+        elif typestr == 'json':
+            return unjsonned(value)
         else:
             return self.str2type[typestr](value)
 
@@ -224,37 +240,40 @@ class ORM(object):
         """
         if type(value) in self.type2str:
             return (value, self.type2str[type(value)])
-        elif self.pickling:
-            return (pickled(value), 'pickle')
-        else:
-            raise TypeError(
-                "Value isn't primitive, and I won't "
-                "pickle it because you have pickling disabled."
-            )
+        try:
+            return (jsonned(value), 'json')
+        except TypeError:
+            if self.pickling:
+                return (pickled(value), 'pickle')
+            else:
+                raise TypeError(
+                    "Value isn't serializable without pickling"
+                )
 
-    def new_graph(self, name, type_s='Graph', data=None, **attr):
-        if type_s not in (
-                'Graph',
-                'DiGraph',
-                'MultiGraph',
-                'MultiDiGraph'
-        ):
-            raise ValueError(
-                "Acceptable type strings: 'Graph', 'DiGraph', 'MultiGraph', 'MultiDiGraph'"
-            )
+    def _init_graph(self, name, type_s='Graph'):
         self.cursor.execute(
-            "INSERT INTO graph (graph, type) VALUES (?, ?);",
+            "INSERT INTO graphs (graph, type) VALUES (?, ?);",
             (name, type_s)
         )
-        return {
-            'Graph': Graph,
-            'DiGraph': DiGraph,
-            'MultiGraph': MultiGraph,
-            'MultiDiGraph': MultiDiGraph
-        }[type_s](self, name, data, **attr)
+
+    def new_graph(self, name, data=None, **attr):
+        self._init_graph(name, 'Graph')
+        return Graph(self, name, data, **attr)
+
+    def new_digraph(self, name, data=None, **attr):
+        self._init_graph(name, 'DiGraph')
+        return DiGraph(self, name, data, **attr)
+
+    def new_multigraph(self, name, data=None, **attr):
+        self._init_graph(name, 'MultiGraph')
+        return MultiGraph(self, name, data, **attr)
+
+    def new_multidigraph(self, name, data=None, **attr):
+        self._init_graph(name, 'MultiDiGraph')
+        return MultiDiGraph(self, name, data, **attr)
 
     def get_graph(self, name):
-        self.cursor.execute("SELECT type FROM graph WHERE name=?;", (name,))
+        self.cursor.execute("SELECT type FROM graphs WHERE graph=?;", (name,))
         (type_s,) = self.cursor.fetchone()
         return {
             'Graph': Graph,
@@ -262,3 +281,62 @@ class ORM(object):
             'MultiGraph': MultiGraph,
             'MultiDiGraph': MultiDiGraph
         }[type_s](self, name)
+
+    def del_graph(self, name):
+        for statement in [
+                "DELETE FROM edge_val WHERE graph=?;",
+                "DELETE FROM edges WHERE graph=?;",
+                "DELETE FROM node_val WHERE graph=?;",
+                "DELETE FROM nodes WHERE graph=?;",
+                "DELETE FROM graphs WHERE graph=?;"
+        ]:
+            self.cursor.execute(statement, name)
+
+    def _active_branches(self):
+        branch = self.branch
+        while branch != 'master':
+            yield branch
+            branch = self.parent(branch)
+        yield 'master'
+
+    def _iternodes(self, graph):
+        rev = self.rev
+        branches = tuple(self._active_branches())
+        self.cursor.execute(
+            "SELECT DISTINCT node, rev, extant FROM nodes "
+            "WHERE graph=? "
+            "AND rev<=? "
+            "AND branch IN ({});".format(", ".join("?" * len(branches))),
+            (unicode(graph), rev) + branches
+        )
+        extance = {}
+        for (node, rev, extant) in self.cursor:
+            if node not in extance or extance[node][0] < rev:
+                extance[node] = (rev, extant)
+        for (node, (rev, extant)) in extance.iteritems():
+            if extant:
+                yield node
+
+    def _node_exists(self, graph, node):
+        branches = tuple(self._active_branches())
+        rev = self.rev
+        self.cursor.execute(
+            "SELECT extant FROM nodes JOIN ("
+            "SELECT graph, node, branch, MAX(rev) AS rev FROM nodes "
+            "WHERE graph=? "
+            "AND node=? "
+            "AND rev<=? "
+            "AND branch IN ({qms})) AS hirev "
+            "ON nodes.graph=hirev.graph "
+            "AND nodes.node=hirev.node "
+            "AND nodes.branch=hirev.branch "
+            "AND nodes.rev=hirev.rev;".format(
+                qms=", ".join("?" * len(branches))
+            ), (
+                unicode(graph),
+                node,
+                rev
+            ) + branches
+        )
+        row = self.cursor.fetchone()
+        return (row is not None and row[0])

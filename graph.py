@@ -9,182 +9,275 @@ from record import (
 )
 
 
-def value_during(branch_tree, skel, branch, rev):
-    """Get the newest value at or before a particular revision in a
-    particular branch.
 
-    """
-    if branch in skel:
-        if rev in skel[branch]:
-            return skel[branch][rev]
-        return skel[branch][max(
-            r for r in skel[branch]
-            if r < rev
-        )]
-    elif branch == "master":
-        raise KeyError("Could not find value")
-    else:
-        return value_during(
-            branch_tree,
-            skel,
-            branch_tree[branch].parent,
-            branch_tree[branch].rev
-        )
-
-
-class FinalMapping(MutableMapping):
-    """Mapping for attributes of nodes, edges, and graphs."""
-    def __getitem__(self, key):
-        """Get the most recent value of the key"""
-        if key not in self.d:
-            raise KeyError("Key never set")
-        branch = self.gorm.cache['branch']
-        rev = self.gorm.cache['rev']
-        branch_tree = self.gorm.cache['branches']
-        return value_during(
-            branch_tree,
-            self.__d,
-            branch,
-            rev
-        )
-
-    def __delitem__(self, k):
-        """Set the key to None, which will not be considered as "set" for the
-        purposes of eg. ``__iter__``
-
-        """
-        self[k] = None
-
-    def __iter__(self):
-        """Yield the keys in my private dict, but only if they're not set to
-        None, as that is taken to indicate unsetness.
-
-        """
-        for k in self.__d:
-            if self[k] is not None:
-                yield k
-
-    def __len__(self):
-        """Count all the keys not set to None"""
-        n = 0
-        for k in self:
-            n += 1
-        return n
-
-
-class GraphMapping(FinalMapping):
+class GraphMapping(MutableMapping):
     """Mapping for graph attributes"""
     def __init__(self, graph):
         """Initialize private dict and store pointers to the graph and ORM"""
         self.graph = graph
         self.gorm = graph.gorm
-        self.__d = {}
+
+
+    def __getitem__(self, key):
+        rev = self.gorm.rev
+        branches = tuple(self.gorm._active_branches())
+        self.gorm.cursor.execute(
+            "SELECT rev, value, type FROM graph_val WHERE "
+            "graph=? AND "
+            "key=? AND "
+            "rev<=? AND "
+            "branch IN ({qms});".format(
+                qms=", ".join("?" * len(branches))
+            ),
+            (self.graph.name, key, rev) + branches
+        )
+        if self.gorm.cursor.rowcount <= 0:
+            raise KeyError("No value for key")
+        (rev, value, typ) = self.gorm.cursor.fetchone()
+        for row in self.gorm.cursor:
+            if row[0] > rev:
+                (rev, value, typ) = row
+        return self.gorm.cast_value(value, typ)
 
     def __setitem__(self, key, value):
         """Set key=value at the present branch and revision"""
-        branch = self.gorm.cache['branch']
-        rev = self.gorm.cache['rev']
-        self.gorm.writerec(GraphValRecord(
-            graph=self.graph,
-            node=self.node,
-            key=key,
-            branch=branch,
-            rev=rev,
-            value=value
-        ))
+        branch = self.gorm.branch
+        rev = self.gorm.rev
+        (strval, strtyp) = self.gorm.stringify_value(value)
+        # delete first, in case there already is such an assignment
+        self.gorm.cursor.execute(
+            "DELETE FROM graph_val WHERE graph=? AND key=? AND branch=? AND rev=?;",
+            (self.graph.name, key, branch, rev)
+        )
+        self.gorm.cursor.execute(
+            "INSERT INTO graph_val (graph, key, branch, rev, value, type) VALUES "
+            "(?, ?, ?, ?, ?, ?);",
+            (self.graph.name, key, branch, rev, strval, strtyp)
+        )
+
+    def __delitem__(self, key):
+        """Indicate that the key has no value at this time"""
+        branch = self.gorm.branch
+        rev = self.gorm.rev
+        # if there's already a value, delete it
+        self.gorm.cursor.execute(
+            "DELETE FROM graph_val WHERE graph=? AND key=? AND branch=? AND rev=?;",
+            (self.graph.name, key, branch, rev)
+        )
+        # type 'unset' means no value here
+        self.gorm.cursor.execute(
+            "INSERT INTO graph_val (graph, key, branch, rev, type) VALUES "
+            "(?, ?, ?, ?, 'unset');",
+            (self.graph.name, key, branch, rev)
+        )
+
+    def __iter__(self):
+        rev = self.gorm.rev
+        branches = tuple(self.gorm._active_branches())
+        self.gorm.cursor.execute(
+            "SELECT DISTINCT key, rev, type FROM graph_val WHERE "
+            "graph=? AND "
+            "rev<=? AND "
+            "branch IN ({qms});".format(
+                qms=", ".join("?" * len(branches))
+            ),
+            (self.graph.name, rev) + branches
+        )
+        d = {}
+        for (key, rev, typ) in self.gorm.cursor:
+            if key not in d or d[key][0] < rev:
+                d[key] = (rev, typ)
+        for (key, (rev, typ)) in d.iteritems():
+            if typ != 'unset':
+                yield key
+
+    def __len__(self):
+        n = 0
+        for k in self:
+            n += 1
+        return n
 
     def clear(self):
-        """Set everything to None"""
+        """Delete everything"""
         for k in self:
             del self[k]
 
+    def __dict__(self):
+        r = {}
+        r.update(self)
+        return r
 
-class NodeOrEdgeMapping(FinalMapping):
-    @property
-    def exists(self):
-        branch = self.gorm.cache['branch']
-        rev = self.gorm.cache['rev']
-        if branch not in self.__existence:
-            return False
-        try:
-            return value_during(
-                self.gorm.cache['branches'],
-                self.__existence,
-                branch,
-                rev
-            )
-        except KeyError:
-            return False
-
-    @exists.setter
-    def set_existence(self, val):
-        if not isinstance(val, bool):
-            raise TypeError("Existence is boolean")
-        branch = self.gorm.cache['branch']
-        rev = self.gorm.cache['rev']
-        if branch not in self.__existence:
-            self.__existence[branch] = {}
-        self.__existence[branch][rev] = val
-        self.gorm.writerec(self.__existence_cls(
-            graph=self.graph.name,
-            node=self.node,
-            branch=branch,
-            rev=rev,
-            exists=val
-        ))
-
-    def clear(self):
-        """Set everything to None, and stop existing"""
-        for k in self:
-            del self[k]
-        self.exists = False
+    def __repr__(self):
+        return repr(dict(self))
 
 
-class GraphNodeMapping(MutableMapping):
+class GraphNodeMapping(GraphMapping):
     """Mapping for nodes in a graph"""
-    class Node(NodeOrEdgeMapping):
+    class Node(GraphMapping):
         """Mapping for node attributes"""
-        __existence_cls = NodeRecord
 
-        def __init__(self, graph, node, existence=None, data=None):
+        @property
+        def exists(self):
+            branches = tuple(self.gorm._active_branches())
+            rev = self.gorm.rev
+            self.gorm.cursor.execute(
+                "SELECT nodes.extant FROM nodes JOIN ("
+                "SELECT graph, node, branch, MAX(rev) AS rev "
+                "FROM nodes WHERE "
+                "graph=? AND "
+                "node=? AND "
+                "rev<=? AND "
+                "branch IN ({qms}) "
+                "GROUP BY graph, node, branch) AS hirev "
+                "ON nodes.graph=hirev.graph "
+                "AND nodes.node=hirev.node "
+                "AND nodes.branch=hirev.branch "
+                "AND nodes.rev=hirev.rev;".format(
+                    qms=", ".join("?" * len(branches))
+                ), (
+                    self.graph.name,
+                    self.node,
+                    rev
+                ) + branches
+            )
+            try:
+                return bool(self.gorm.cursor.fetchone()[0])
+            except TypeError:
+                return False
+
+        @exists.setter
+        def exists(self, v):
+            if not isinstance(v, bool):
+                raise TypeError("Existence is boolean")
+            branch = self.gorm.branch
+            rev=self.gorm.rev
+            self.gorm.cursor.execute(
+                "DELETE FROM nodes WHERE ("
+                "graph=? AND "
+                "node=? AND "
+                "branch=? AND "
+                "rev=?;",
+                (
+                    self.graph.name,
+                    self.node,
+                    branch,
+                    rev
+                )
+            )
+            self.gorm.cursor.execute(
+                "INSERT INTO nodes ("
+                "graph, "
+                "node, "
+                "branch, "
+                "rev, "
+                "extant) VALUES (?, ?, ?, ?, ?);",
+                (
+                    self.graph.name,
+                    self.node,
+                    branch,
+                    rev,
+                    v
+                )
+            )
+
+        def __init__(self, graph, node):
             self.graph = graph
             self.gorm = graph.gorm
             self.node = node
-            if existence is None:
-                self.__existence = {}
-            else:
-                self.__existence = existence
-            if data is None:
-                self.__d = {}
-            else:
-                self.__d = data
+            self.name = self.node
+
+        def __getitem__(self, key):
+            rev = self.gorm.rev
+            branches = tuple(self.gorm._active_branches())
+            self.gorm.cursor.execute(
+                "SELECT node_val.value, node_val.type FROM node_val JOIN ("
+                "SELECT graph, node, key, branch, MAX(rev) AS rev "
+                "FROM node_val WHERE "
+                "graph=? AND "
+                "node=? AND "
+                "key=? AND "
+                "rev<=? AND "
+                "branch IN ({qms}) "
+                "AND type<>'unset' "
+                "GROUP BY graph, node, key, branch) AS hirev "
+                "ON node_val.graph=hirev.graph "
+                "AND node_val.node=hirev.node "
+                "AND node_val.key=hirev.key "
+                "AND node_val.branch=hirev.branch "
+                "AND node_val.rev=hirev.rev;".format(
+                    qms=", ".join("?" * len(branches))
+                ),
+                (self.graph.name, self.node, key, rev) + branches
+            )
+            return self.gorm.cast_value(*self.gorm.cursor.fetchone())
+
+        def __iter__(self):
+            rev = self.gorm.rev
+            branches = tuple(self.gorm._active_branches())
+            self.gorm.cursor.execute(
+                "SELECT DISTINCT node_val.key FROM node_val JOIN "
+                "(SELECT graph, node, key, branch, MAX(rev) AS rev "
+                "FROM node_val WHERE "
+                "graph=? AND "
+                "node=? AND "
+                "rev<=? AND "
+                "branch IN ({qms}) "
+                "GROUP BY graph, node, key, branch) AS hirev "
+                "ON node_val.graph=hirev.graph "
+                "AND node_val.node=hirev.node "
+                "AND node_val.key=hirev.key "
+                "AND node_val.branch=hirev.branch "
+                "AND node_val.rev=hirev.rev "
+                "WHERE node_val.type<>'unset';".format(
+                    qms=", ".join("?" * len(branches))
+                ), (
+                    self.graph.name,
+                    self.node,
+                    rev
+                ) + branches
+            )
+            for row in self.gorm.cursor:
+                yield row[0]
 
         def __setitem__(self, key, value):
-            """Set key=value at the present branch and revision."""
-            branch = self.gorm.cache['branch']
-            rev = self.gorm.cache['rev']
-            if branch not in self.__d[key]:
-                self.__d[key][branch] = {}
-            self.__d[key][branch][rev] = value
-            self.gorm.writerec(NodeValRecord(
-                graph=self.graph.name,
-                node=self.node,
-                key=key,
-                branch=self.gorm.cache['branch'],
-                rev=self.gorm.cache['rev'],
-                value=value,
-                type=self.gorm.type2str[type(value)]
-            ))
+            """Set key=value at the present branch and revision. Overwrite if necessary."""
+            branch = self.gorm.branch
+            rev = self.gorm.rev
+            self.gorm.cursor.execute(
+                "DELETE FROM node_val WHERE graph=? AND node=? AND key=? AND branch=? AND rev=?;",
+                (self.graph.name, self.node, key, branch, rev)
+            )
+            (val, typ) = self.gorm.stringify_value(value)
+            self._del(key)
+            self.gorm.cursor.execute(
+                "INSERT INTO node_val (graph, node, key, branch, rev, value, type) VALUES "
+                "(?, ?, ?, ?, ?, ?, ?);",
+                (self.graph.name, self.node, key, branch, rev, val, typ)
+            )
+
+        def __delitem__(self, key):
+            branch = self.gorm.branch
+            rev = self.gorm.rev
+            self.gorm.cursor.execute(
+                "DELETE FROM node_val WHERE graph=? AND node=? AND key=? AND branch=? AND rev=?;",
+                (self.graph.name, self.node, key, branch, rev)
+            )
+            self.gorm.cursor.execute(
+                "INSERT INTO node_val (graph, node, key, branch, rev, type) VALUES "
+                "(?, ?, ?, ?, ?, 'unset');",
+                (self.graph.name, self.node, key, branch, rev)
+            )
 
     def __init__(self, graph):
-        """Initialize private dictionary"""
         self.graph = graph
         self.gorm = graph.gorm
-        self.__d = {}
 
     def __getitem__(self, node):
-        """Delegate to private dictionary"""
-        return self.__d[node]
+        """If the node exists at present, return it, else throw KeyError"""
+        r = self.Node(self.graph, node)
+        if not r.exists:
+            raise KeyError("Node doesn't exist")
+        return r
 
     def __setitem__(self, node, dikt):
         """Only accept dict-like values for assignment. These are taken to be
@@ -192,75 +285,290 @@ class GraphNodeMapping(MutableMapping):
         is made with them, perhaps clearing out the one already there.
 
         """
-        if node in self.__d:
-            self.__d[node].clear()
-        else:
-            self.__d[node] = self.Node(self.graph, node)
-        self.__d[node].exists = True
-        self.__d[node].update(dikt)
+        n = self.Node(self.graph, node)
+        n.clear()
+        n.exists = True
+        n.update(dikt)
 
     def __delitem__(self, node):
         """Indicate that the given node no longer exists"""
-        if node not in self.__d:
+        n = self.Node(self.graph, node)
+        if not n.exists:
             raise KeyError("No such node")
-        self.__d[node].exists = False
+        n.clear()
 
     def __iter__(self):
-        for (k, v) in self.__d.iteritems():
-            if v.exists:
-                yield k
+        for node in self.gorm._iternodes(self.graph):
+            yield node
 
     def __len__(self):
         n = 0
-        for k in iter(self):
+        for node in iter(self):
             n += 1
         return n
 
+    def __dict__(self):
+        r = {}
+        for (name, node) in self.iteritems():
+            r[name] = dict(node)
+        return r
 
-class GraphEdgeMapping(MutableMapping):
+
+class GraphEdgeMapping(GraphMapping):
     """Provides an adjacency mapping and possibly a predecessor mapping
     for a graph.
 
     """
-    class Edge(NodeOrEdgeMapping):
-        __existence_cls = EdgeRecord
+    def __init__(self, graph):
+        self.graph = graph
+        self.gorm = graph.gorm
 
-        def __init__(self, graph, nodeA, nodeB, idx=0, existence=None, data=None):
+    def __iter__(self):
+        for node in self.gorm._iternodes(self.graph):
+            yield node
+
+    def __len__(self):
+        n = 0
+        for nodeA in self:
+            n += 1
+        return n
+
+    def __dict__(self):
+        r = {}
+        for (nodeA, succ) in self.iteritems():
+            r[nodeA] = dict(succ)
+        return r
+
+    class Edge(GraphMapping):
+        def __init__(self, graph, nodeA, nodeB, idx=0):
             self.graph = graph
             self.gorm = graph.gorm
             self.nodeA = nodeA
             self.nodeB = nodeB
             self.idx = idx
-            if existence is None:
-                self.__existence = {}
-            else:
-                self.__existence = existence
-            if data is None:
-                self.__d = {}
-            else:
-                self.__d = data
+
+        @property
+        def exists(self):
+            branches = tuple(self.gorm._active_branches())
+            rev = self.gorm.rev
+            self.gorm.cursor.execute(
+                "SELECT edges.extant FROM edges JOIN ( "
+                "SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
+                "FROM edges WHERE "
+                "graph=? AND "
+                "nodeA=? AND "
+                "nodeB=? AND "
+                "idx=? AND "
+                "rev<=? AND "
+                "branch IN ({qms}) "
+                "GROUP BY graph, nodeA, nodeB, idx, branch) AS hirev "
+                "ON edges.graph=hirev.graph "
+                "AND edges.nodeA=hirev.nodeA "
+                "AND edges.nodeB=hirev.nodeB "
+                "AND edges.idx=hirev.idx "
+                "AND edges.rev=hirev.rev;".format(
+                    qms=", ".join("?" * len(branches))
+                ), (
+                    self.graph.name,
+                    self.nodeA,
+                    self.nodeB,
+                    self.idx,
+                    rev
+                ) + branches
+            )
+            try:
+                return bool(self.gorm.cursor.fetchone()[0])
+            except TypeError:  # no record
+                return False
+
+        @exists.setter
+        def exists(self, v):
+            if not isinstance(v, bool):
+                raise TypeError("Existence is boolean")
+            branch = self.gorm.branch
+            rev = self.gorm.rev
+            self.gorm.cursor.execute(
+                "DELETE FROM edges WHERE "
+                "graph=? AND "
+                "nodeA=? AND "
+                "nodeB=? AND "
+                "idx=? AND "
+                "branch=? AND "
+                "rev=?;",
+                (
+                    self.graph.name,
+                    self.nodeA,
+                    self.nodeB,
+                    self.idx,
+                    branch,
+                    rev
+                )
+            )
+            self.gorm.cursor.execute(
+                "INSERT INTO edges ("
+                "graph, "
+                "nodeA, "
+                "nodeB, "
+                "idx, "
+                "branch, "
+                "rev, "
+                "extant) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                (
+                    self.graph.name,
+                    self.nodeA,
+                    self.nodeB,
+                    self.idx,
+                    branch,
+                    rev,
+                    v
+                )
+            )
+
+        def __getitem__(self, key):
+            rev = self.gorm.rev
+            branches = tuple(self.gorm._active_branches())
+            self.gorm.cursor.execute(
+                "SELECT edge_val.value, edge_val.type FROM edge_val JOIN "
+                "(SELECT graph, nodeA, nodeB, idx, key, MAX(rev) AS rev "
+                "FROM edge_val WHERE "
+                "graph=? AND "
+                "nodeA=? AND "
+                "nodeB=? AND "
+                "idx=? AND "
+                "key=? AND "
+                "rev<=? AND "
+                "branch IN ({qms})) AS hirev "
+                "ON edge_val.graph=hirev.graph "
+                "AND edge_val.nodeA=hirev.nodeA "
+                "AND edge_val.nodeB=hirev.nodeB "
+                "AND edge_val.idx=hirev.idx "
+                "AND edge_val.key=hirev.key "
+                "AND edge_val.rev=hirev.rev "
+                "WHERE edge_val.type<>'unset';".format(
+                    qms=", ".join("?" * len(branches))
+                ),
+                (
+                    self.graph.name,
+                    self.nodeA,
+                    self.nodeB,
+                    self.idx,
+                    key,
+                    rev
+                ) + branches
+            )
+            return self.gorm.cast_value(*self.gorm.cursor.fetchone())
+
+        def __iter__(self):
+            rev = self.gorm.rev
+            branches = tuple(self.gorm._active_branches())
+            self.gorm.cursor.execute(
+                "SELECT DISTINCT edge_val.key FROM edge_val JOIN ("
+                "SELECT DISTINCT graph, nodeA, nodeB, idx, key, branch, MAX(rev) AS rev "
+                "FROM edge_val WHERE "
+                "graph=? AND "
+                "nodeA=? AND "
+                "nodeB=? AND "
+                "idx=? AND "
+                "rev<=? AND "
+                "branch IN ({qms})) AS hirev "
+                "ON edge_val.graph=hirev.graph "
+                "AND edge_val.nodeA=hirev.nodeA "
+                "AND edge_val.nodeB=hirev.nodeB "
+                "AND edge_val.idx=hirev.idx "
+                "AND edge_val.rev=hirev.rev "
+                "AND edge_val.key=hirev.key "
+                "WHERE edge_val.type<>'unset';".format(
+                    qms=", ".join("?" * len(branches))
+                ), (
+                    self.graph.name,
+                    self.nodeA,
+                    self.nodeB,
+                    self.idx,
+                    rev
+                ) + branches
+            )
+            for row in self.gorm.cursor:
+                yield row[0]
 
         def __setitem__(self, key, value):
             """Set a database record to say that key=value at the present branch
             and revision
 
             """
-            branch = self.gorm.cache['branch']
-            rev = self.gorm.cache['rev']
-            if branch not in self.__d[key]:
-                self.__d[key][branch] = {}
-            self.__d[key][branch][rev] = value
-            self.gorm.writerec(EdgeValRecord(
-                graph=self.graph.name,
-                nodeA=self.nodeA,
-                nodeB=self.nodeB,
-                idx=self.idx,
-                key=key,
-                branch=branch,
-                rev=rev,
-                value=value,
-                type=self.gorm.type2str[type(value)]
-            ))
+            branch = self.gorm.branch
+            rev = self.gorm.rev
+            (val, typ) = self.gorm.stringify_value(value)
+            self.gorm.cursor.execute(
+                "DELETE FROM edge_val WHERE "
+                "graph=? AND "
+                "nodeA=? AND "
+                "nodeB=? AND "
+                "idx=? AND "
+                "branch=? AND "
+                "rev=?;",
+                (
+                    self.graph.name,
+                    self.nodeA,
+                    self.nodeB,
+                    self.idx,
+                    branch,
+                    rev
+                )
+            )
+            self.gorm.cursor.execute(
+                "INSERT INTO edge_val (graph, nodeA, nodeB, idx, branch, rev, value, type) VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?);",
+                (
+                    self.graph.name,
+                    self.nodeA,
+                    self.nodeB,
+                    self.idx,
+                    branch,
+                    rev,
+                    val,
+                    typ
+                )
+            )
+
+        def __delitem__(self, key):
+            branch = self.gorm.branch
+            rev = self.gorm.rev
+            self.gorm.cursor.execute(
+                "DELETE FROM edge_val WHERE "
+                "graph=? AND "
+                "nodeA=? AND "
+                "nodeB=? AND "
+                "idx=? AND "
+                "branch=? AND "
+                "rev=?;",
+                (
+                    self.graph.name,
+                    self.nodeA,
+                    self.nodeB,
+                    self.idx,
+                    branch,
+                    rev
+                )
+            )
+            self.gorm.cursor.execute(
+                "INSERT INTO edge_val ("
+                "graph, "
+                "nodeA, "
+                "nodeB, "
+                "idx, "
+                "branch, "
+                "rev, "
+                "type) VALUES (?, ?, ?, ?, ?, ?, 'unset');",
+                (
+                    self.graph.name,
+                    self.nodeA,
+                    self.nodeB,
+                    self.idx,
+                    branch,
+                    rev
+                )
+            )
+
 
     class EdgeBackward(Edge):
         """Edge with the nodeA and nodeB reversed, for predecessor maps."""
@@ -275,185 +583,301 @@ class GraphEdgeMapping(MutableMapping):
                 data
             )
 
-    class Cessors(MutableMapping):
-        """Mapping for when one node of the edge has been specified.
-
-        Might map to predecessors or successors depending on what you put in it.
-
-        Might map to edges directly or to another mapping, depending on its __sub_cls.
-
-        """
-        def __init__(self, graph, nodeA, sub_cls):
-            self.graph = graph
-            self.gorm = graph.gorm
-            self.nodeA = nodeA
-            self.__d = {}
-
-        def __iter__(self):
-            """Delegate to private dict"""
-            return iter(self.__d)
-
-        def __len__(self):
-            """Delegate to private dict"""
-            return len(self.__d)
-
-        def __getitem__(self, nodeB):
-            """Delegate to private dict"""
-            return self.__d[nodeB]
-
-        def __setitem__(self, nodeB, value):
-            if nodeB in self.__d:
-                v = self.__d[nodeB]
-            else:
-                v = self.__sub_cls(self.graph, self.nodeA)
-            v.clear()
-            v.exists = True
-            v.update(value)
-
-        def __delitem__(self, nodeB):
-            self.__d[nodeB].clear()
-            del self.__d[nodeB]
-
-        def clear(self):
-            for v in self.__d.itervalues():
-                v.clear()
-            self.__d = {}
-
-    class Node2Node(MutableMapping):
-        """Mapping for when the predecessor and successor nodes are specified
-        but the edge index is not.
-        
-        For use only in multigraphs.
-        
-        """
-
-        def __init__(self, graph, nodeA, nodeB):
-            """Start a private dictionary to hold Edge objects"""
-            self.graph = graph
-            self.gorm = graph.gorm
-            self.nodeA = nodeA
-            self.nodeB = nodeB
-            self.__d = {}
-
-        def __iter__(self):
-            """Iterate over edge indices"""
-            for (idx, edge) in self.__d.iteritems():
-                if edge.exists:
-                    yield idx
-
-        def __len__(self):
-            """Return number of edges that presently exist"""
-            n = 0
-            for edge in self.__d.itervalues():
-                if edge.exists:
-                    n += 1
-            return n
-
-        def __getitem__(self, idx):
-            """Return the edge with the requested index, if it presently exists"""
-            if idx not in self.__d:
-                raise KeyError("There never was such an edge")
-            e = self.__d[idx]
-            if not e.exists:
-                raise KeyError("No such edge at present")
-            return e
-
-        def __setitem__(self, k, v):
-            """Interpret the value as a dictionary of Edge attributes and assign
-            them to a new Edge
-
-            """
-            if k in self.__d:
-                e = self.__d[k]
-            else:
-                e = self.__sub_cls(self.graph, self.nodeA, self.nodeB, k)
-            e.clear()
-            e.exists = True
-            e.update(v)
-            self.__d[k] = e
-
-        def __delitem__(self, k):
-            if k not in self.__d:
-                raise KeyError("No such edge")
-            if not self.__d[k].exists:
-                raise KeyError("Edge already deleted")
-            self.__d[k].exists = False
-
-        def clear(self):
-            for e in self.__d.itervalues():
-                e.clear()
-            self.__d = {}
-
-    def __init__(self, graph):
-        """Start a private dict to hold Predecessors or Successors instances"""
-        self.graph = graph
-        self.gorm = graph.gorm
-        self.__d = {}
-
-    def __iter__(self):
-        """Delegate to private dict"""
-        return iter(self.__d)
-
-    def __len__(self):
-        """Delegate to private dict"""
-        return len(self.__d)
-
-    def __getitem__(self, k):
-        """Delegate to private dict"""
-        return self.__d[k]
-
-    def __setitem__(self, key, value):
-        """Interpret the value as a dictionary of dictionaries of either Edge
-        instances or dictionaries of Edge instances, depending on if
-        I'm a multigraph.
-
-        """
-        if key in self.__d:
-            v = self.__d[key]
-        else:
-            v = self.__sub_cls(self.graph, key)
-        v.clear()
-        v.update(value)
-
 
 class GraphSuccessorsMapping(GraphEdgeMapping):
-    class Successors(GraphEdgeMapping.Cessors):
-        __sub_cls = GraphEdgeMapping.Edge
+    def __getitem__(self, nodeA):
+        if not self.gorm._node_exists(self.graph.name, nodeA):
+            raise KeyError("No such node")
+        return self.Successors(self, nodeA)
 
-    __sub_cls = Successors
+    def __setitem__(self, nodeA, val):
+        sucs = self.Successors(self, nodeA)
+        sucs.clear()
+        sucs.update(val)
+
+    def __delitem__(self, nodeA):
+        self.Successors(self, nodeA).clear()
+
+    class Successors(GraphEdgeMapping):
+        def __init__(self, container, nodeA):
+            self.container = container
+            self.graph = container.graph
+            self.gorm = self.graph.gorm
+            self.nodeA = nodeA
+
+        def __iter__(self):
+            branches = tuple(self.gorm._active_branches())
+            rev = self.gorm.rev
+            self.gorm.cursor.execute(
+                "SELECT DISTINCT edges.nodeB FROM edges JOIN "
+                "(SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
+                "FROM edges WHERE "
+                "graph=? AND "
+                "nodeA=? AND "
+                "rev<=? AND "
+                "branch IN ({qms}) "
+                "GROUP BY graph, nodeA, nodeB, idx, branch) AS hirev "
+                "ON edges.graph=hirev.graph "
+                "AND edges.nodeA=hirev.nodeA "
+                "AND edges.nodeB=hirev.nodeB "
+                "AND edges.idx=hirev.idx "
+                "AND edges.rev=hirev.rev "
+                "WHERE edges.extant={true};".format(
+                    qms=", ".join("?" * len(branches)),
+                    true=self.gorm.sql_types[self.gorm.sql_flavor]['true']
+                ), (
+                    self.graph.name,
+                    self.nodeA,
+                    rev
+                ) + branches
+            )
+            for row in self.gorm.cursor:
+                yield row[0]
+
+        def __len__(self):
+            n = 0
+            for b in self:
+                n += 1
+            return n
+
+        def __getitem__(self, nodeB):
+            r = self.Edge(self.graph, self.nodeA, nodeB)
+            if not r.exists:
+                raise KeyError("Edge doesn't exist")
+            return r
+
+        def __setitem__(self, nodeB, value):
+            e = self.Edge(self.graph, self.nodeA, nodeB)
+            e.clear()
+            e.exists = True
+            e.update(value)
+
+        def __delitem__(self, nodeB):
+            e = self.Edge(self.graph, self.nodeA, nodeB)
+            if not e.exists:
+                raise KeyError("No such edge")
+            e.clear()
+
+        def __dict__(self):
+            r = {}
+            for (nodeB, edge) in self.iteritems():
+                r[nodeB] = dict(edge)
+            return r
+
+        def clear(self):
+            for nodeB in self:
+                del self[nodeB]
 
 
 class DiGraphPredecessorsMapping(GraphEdgeMapping):
-    class Predecessors(GraphEdgeMapping.Cessors):
-        __sub_cls = GraphEdgeMapping.EdgeBackward
+    def __getitem__(self, nodeB):
+        if not self.gorm._node_exists(self.graph.name, nodeB):
+            raise KeyError("No such node")
+        return self.Predecessors(self, nodeB)
 
-    __sub_cls = Predecessors
+    def __setitem__(self, nodeB, val):
+        preds = self.Predecessors(self, nodeB)
+        preds.clear()
+        preds.update(val)
+
+    def __delitem__(self, nodeB):
+        self.Predecessors(self, nodeB).clear()
+
+    class Predecessors(GraphEdgeMapping):
+        def _getsub(self, nodeA):
+            return self.Edge(self.graph, nodeA, self.nodeB)
+
+        def __init__(self, container, nodeB):
+            self.container = container
+            self.graph = container.graph
+            self.gorm = self.graph.gorm
+            self.nodeB = nodeB
+
+        def __iter__(self):
+            branches = tuple(self.gorm._active_branches())
+            rev = self.gorm.rev
+            self.gorm.cursor.execute(
+                "SELECT DISTINCT edges.nodeA FROM edges JOIN "
+                "(SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
+                "FROM edges WHERE "
+                "graph=? AND "
+                "nodeB=? AND "
+                "rev<=? AND "
+                "branch IN ({qms}) "
+                "GROUP BY graph, nodeA, nodeB, idx, branch) AS hirev "
+                "ON edges.graph=hirev.graph "
+                "AND edges.nodeA=hirev.nodeA "
+                "AND edges.nodeB=hirev.nodeB "
+                "AND edges.idx=hirev.idx "
+                "AND edges.rev=hirev.rev "
+                "WHERE edges.extant={true};".format(
+                    qms=", ".join("?" * len(branches)),
+                    true=self.gorm.sql_types[self.gorm.sql_flavor]['true']
+                ), (
+                    self.graph.name,
+                    self.nodeB,
+                    rev
+                ) + branches
+            )
+            for row in self.gorm.cursor:
+                yield row[0]
+
+        def __len__(self):
+            n = 0
+            for a in self:
+                n += 1
+            return n
+
+        def __getitem__(self, nodeA):
+            r = self._getsub(nodeA)
+            if not r.exists:
+                raise KeyError("Edge doesn't exist")
+            return r
+
+        def __setitem__(self, nodeA, value):
+            e = self._getsub(nodeA)
+            e.clear()
+            e.exists = True
+            e.update(value)
+
+        def __delitem__(self, nodeA):
+            e = self._getsub(nodeA)
+            if not e.exists:
+                raise KeyError("No such edge")
+            e.clear()
 
 
-class MultiGraphSuccessorsMapping(GraphEdgeMapping):
-    def __new__(cls, *args, **kwargs):
-        class NodeA2NodeB(cls.Node2Node):
-            __sub_cls = cls.Edge
+class MultiEdges(GraphEdgeMapping):
+    def __init__(self, graph, nodeA, nodeB):
+        self.graph = graph
+        self.gorm = graph.gorm
+        self.nodeA = nodeA
+        self.nodeB = nodeB
 
-        class Successors(cls.Cessors):
-            __sub_cls = NodeA2NodeB
+    def __iter__(self):
+        branches = tuple(self.gorm._active_branches())
+        rev = self.gorm.rev
+        self.gorm.cursor.execute(
+            "SELECT DISTINCT idx FROM edges JOIN "
+            "(SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
+            "FROM edges WHERE "
+            "graph=? AND "
+            "nodeA=? AND "
+            "nodeB=? AND "
+            "rev<=? AND "
+            "branch IN ({qms}) AND"
+            "extant={true} "
+            "GROUP BY graph, nodeA, nodeB, idx, branch) AS hirev "
+            "ON edges.graph=hirev.graph "
+            "AND edges.nodeA=hirev.nodeA "
+            "AND edges.nodeB=hirev.nodeB "
+            "AND edges.idx=hirev.idx "
+            "AND edges.rev=hirev.rev;".format(
+                qms=", ".join("?" * len(branches)),
+                true=self.gorm.sql_types[self.gorm.sql_flavor]['true']
+            ), (
+                self.graph.name,
+                self.nodeA,
+                self.nodeB,
+                rev
+            ) + branches
+        )
+        for row in self.gorm.cursor:
+            yield int(row[0])
 
-        r = super(MultiGraphSuccessorsMapping, cls).__new__(cls, *args, **kwargs)
-        r.__sub_cls = Successors
+    def __len__(self):
+        branches = tuple(self.gorm._active_branches())
+        rev = self.gorm.rev
+        self.gorm.cursor.execute(
+            "SELECT COUNT(DISTINCT idx) FROM edges JOIN "
+            "(SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
+            "FROM edges WHERE "
+            "graph=? AND "
+            "nodeA=? AND "
+            "nodeB=? AND "
+            "rev<=? AND "
+            "branch IN ({qms}) "
+            "GROUP BY graph, nodeA, nodeB, idx, branch) AS hirev "
+            "ON edges.graph=hirev.graph "
+            "AND edges.nodeA=hirev.nodeA "
+            "AND edges.nodeB=hirev.nodeB "
+            "AND edges.rev=hirev.rev "
+            "WHERE edges.extant={true};".format(
+                qms=", ".join("?" * len(branches)),
+                true=self.gorm.sql_types[self.gorm.sql_flavor['true']]
+            ), (
+                self.graph.name,
+                self.nodeA,
+                self.nodeB,
+                rev
+            ) + branches
+        )
+        return self.gorm.cursor.fetchone()[0]
+
+    def __getitem__(self, idx):
+        r = self.Edge(self.graph, self.nodeA, self.nodeB, idx)
+        if not r.exists:
+            raise KeyError("No edge at that index")
         return r
 
+    def __setitem__(self, idx, val):
+        e = self.Edge(self.graph, self.nodeA, self.nodeB, idx)
+        e.clear()
+        e.exists = True
+        e.update(val)
 
-class MultiDiGraphPredecessorsMapping(GraphEdgeMapping):
-    def __new__(cls, *args, **kwargs):
-        class NodeB2NodeA(cls.Node2Node):
-            __sub_cls = cls.EdgeBackward
+    def __delitem__(self, idx):
+        e = self.Edge(self.graph, self.nodeA, self.nodeB, idx)
+        if not e.exists:
+            raise KeyError("No edge at that index")
+        e.clear()
 
-        class Predecessors(cls.Cessors):
-            __sub_cls = NodeB2NodeA
-
-        r = super(MultiDiGraphPredecessorsMapping, cls).__new__(cls, *args, **kwargs)
-        r.__sub_cls = Predecessors
+    def __dict__(self):
+        r = {}
+        for (idx, edge) in self.iteritems():
+            r[idx] = dict(edge)
         return r
+
+    def clear(self):
+        for idx in self:
+            del self[idx]
+
+
+class MultiGraphSuccessorsMapping(GraphSuccessorsMapping):
+    def __getitem__(self, nodeA):
+        if not self.gorm._node_exists(self.graph.name, nodeA):
+            raise KeyError("No such node")
+        return self.Successors(self, nodeA)
+
+    def __setitem__(self, nodeA, val):
+        r = self.Successors(self, nodeA)
+        r.clear()
+        r.update(val)
+
+    def __delitem__(self, nodeA):
+        self.Successors(self, nodeA).clear()
+
+    class Successors(GraphSuccessorsMapping.Successors):
+        def _edges(self, nodeB):
+            return MultiEdges(self.graph, self.nodeA, nodeB)
+
+        def __getitem__(self, nodeB):
+            r = self._edges(nodeB)
+            if len(r) == 0:
+                raise KeyError("No edge between these nodes")
+            return r
+
+        def __setitem__(self, nodeB, val):
+            self._edges(nodeB).update(val)
+
+        def __delitem__(self, nodeB):
+            self._edges(nodeB).clear()
+
+
+class MultiDiGraphPredecessorsMapping(DiGraphPredecessorsMapping):
+    class Predecessors(DiGraphPredecessorsMapping.Predecessors):
+        def _getsub(self, nodeA):
+            return MultiEdges(self.graph, nodeA, self.nodeB)
 
 
 class Graph(networkx.Graph):
@@ -467,7 +891,7 @@ class Graph(networkx.Graph):
         considered eqivalent to deleting the key altogether.
 
         """
-        self.name = name
+        self._name = name
         self.gorm = gorm
         self.graph = GraphMapping(self)
         self.node = GraphNodeMapping(self)
@@ -476,6 +900,14 @@ class Graph(networkx.Graph):
             networkx.convert.to_networkx_graph(data, create_using=self)
         self.graph.update(attr)
         self.edge = self.adj
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, v):
+        raise TypeError("gorm graphs can't be renamed")
 
     def clear(self):
         """Remove all nodes and edges from the graph.
@@ -502,15 +934,25 @@ class DiGraph(networkx.DiGraph):
         considered eqivalent to deleting the key altogether.
 
         """
-        self.graph = GraphMapping(gorm, name)
-        self.node = GraphNodeMapping(gorm, name)
-        self.adj = GraphSuccessorsMapping(gorm, name)
-        self.pred = DiGraphPredecessorsMapping(gorm, name)
+        self.gorm = gorm
+        self._name = name
+        self.graph = GraphMapping(self)
+        self.node = GraphNodeMapping(self)
+        self.adj = GraphSuccessorsMapping(self)
+        self.pred = DiGraphPredecessorsMapping(self)
         self.succ = self.adj
         if data is not None:
             networkx.convert.to_networkx_graph(data, create_using=self)
         self.graph.update(attr)
         self.edge = self.adj
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, v):
+        raise TypeError("gorm graphs can't be renamed")
 
 
 class MultiGraph(networkx.MultiGraph):
@@ -535,3 +977,4 @@ class MultiDiGraph(networkx.MultiDiGraph):
             networkx.convert.to_networkx_graph(data, create_using=self)
         self.graph.update(attr)
         self.edge = self.adj
+ 
