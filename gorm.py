@@ -137,11 +137,11 @@ class ORM(object):
             "branch {text} NOT NULL DEFAULT 'master', "
             "rev {integer} NOT NULL DEFAULT 0, "
             "value {text}, "
-            "type {text} NOT NULL, "
+            "valtype {text} NOT NULL, "
             "PRIMARY KEY (graph, key, branch, rev), "
             "FOREIGN KEY(graph) REFERENCES graphs(graph), "
             "FOREIGN KEY(branch) REFERENCES branches(branch), "
-            "CHECK(type IN "
+            "CHECK(valtype IN "
             "('pickle', 'json', 'str', 'unicode', 'int', 'float', 'bool', 'unset'))"
             ");",
             "CREATE TABLE nodes ("
@@ -150,9 +150,11 @@ class ORM(object):
             "branch {text} NOT NULL DEFAULT 'master', "
             "rev {integer} NOT NULL DEFAULT 0, "
             "extant {boolean} NOT NULL, "
+            "nametype {text} NOT NULL DEFAULT 'str', "
             "PRIMARY KEY (graph, node, branch, rev), "
             "FOREIGN KEY(graph) REFERENCES graphs(graph), "
-            "FOREIGN KEY(branch) REFERENCES branches(branch)"
+            "FOREIGN KEY(branch) REFERENCES branches(branch), "
+            "CHECK(nametype IN ('str', 'int', 'unicode'))"
             ");",
             "CREATE TABLE node_val ("
             "graph {text} NOT NULL, "
@@ -161,11 +163,11 @@ class ORM(object):
             "branch {text} NOT NULL DEFAULT 'master', "
             "rev {integer} NOT NULL DEFAULT 0, "
             "value {text}, "
-            "type {text} NOT NULL, "
+            "valtype {text} NOT NULL, "
             "PRIMARY KEY(graph, node, key, branch, rev), "
             "FOREIGN KEY(graph, node) REFERENCES nodes(graph, node), "
             "FOREIGN KEY(branch) REFERENCES branches(branch), "
-            "CHECK(type IN "
+            "CHECK(valtype IN "
             "('pickle', 'json', 'str', 'unicode', 'int', 'float', 'bool', 'unset'))"
             ");",
             "CREATE TABLE edges ("
@@ -190,12 +192,12 @@ class ORM(object):
             "branch {text} NOT NULL DEFAULT 'master', "
             "rev {integer} NOT NULL DEFAULT 0, "
             "value {text}, "
-            "type {text} NOT NULL, "
+            "valtype {text} NOT NULL, "
             "PRIMARY KEY(graph, nodeA, nodeB, idx, key, branch, rev), "
             "FOREIGN KEY(graph, nodeA, nodeB, idx) "
             "REFERENCES edges(graph, nodeA, nodeB, idx), "
             "FOREIGN KEY(branch) REFERENCES branches(branch), "
-            "CHECK(type IN "
+            "CHECK(valtype IN "
             "('pickle', 'json', 'str', 'unicode', 'int', 'float', 'bool', 'unset'))"
             ");"
         ]
@@ -219,7 +221,7 @@ class ORM(object):
         )
         return self.cursor.fetchone()[1]
 
-    def cast_value(self, value, typestr):
+    def cast(self, value, typestr):
         """Return ``value`` cast into the type indicated by ``typestr``"""
         if typestr == 'pickle':
             if self.pickling:
@@ -233,7 +235,7 @@ class ORM(object):
         else:
             return self.str2type[typestr](value)
 
-    def stringify_value(self, value):
+    def stringify(self, value):
         """Return a pair of a string representing the value, and another
         string describing its type (for use with ``cast_value``)
 
@@ -303,28 +305,31 @@ class ORM(object):
         rev = self.rev
         branches = tuple(self._active_branches())
         self.cursor.execute(
-            "SELECT DISTINCT node, rev, extant FROM nodes "
-            "WHERE graph=? "
-            "AND rev<=? "
-            "AND branch IN ({});".format(", ".join("?" * len(branches))),
-            (unicode(graph), rev) + branches
+            "SELECT nodes.node, nametype FROM nodes "
+            "JOIN (SELECT node, rev "
+            "FROM nodes WHERE graph=? AND rev<=? AND branch IN ({qms}) "
+            "GROUP BY node) AS hirev ON nodes.node=hirev.node "
+            "AND nodes.rev=hirev.rev "
+            "AND branch IN ({qms}) "
+            "WHERE extant={true};".format(
+                qms=", ".join("?" * len(branches)),
+                true=self.sql_types[self.sql_flavor]['true']
+            ),
+            (unicode(graph), rev) + branches * 2
         )
-        extance = {}
-        for (node, rev, extant) in self.cursor:
-            if node not in extance or extance[node][0] < rev:
-                extance[node] = (rev, extant)
-        for (node, (rev, extant)) in extance.iteritems():
-            if extant:
-                yield node
+        for (name, nametype) in self.cursor:
+            yield self.cast(name, nametype)
 
     def _node_exists(self, graph, node):
         branches = tuple(self._active_branches())
         rev = self.rev
+        (name, nametype) = self.stringify(node)
         self.cursor.execute(
             "SELECT extant FROM nodes JOIN ("
             "SELECT graph, node, branch, MAX(rev) AS rev FROM nodes "
             "WHERE graph=? "
             "AND node=? "
+            "AND nametype=? "
             "AND rev<=? "
             "AND branch IN ({qms})) AS hirev "
             "ON nodes.graph=hirev.graph "
@@ -334,7 +339,8 @@ class ORM(object):
                 qms=", ".join("?" * len(branches))
             ), (
                 unicode(graph),
-                node,
+                name,
+                nametype,
                 rev
             ) + branches
         )
