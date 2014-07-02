@@ -1,4 +1,5 @@
 import networkx
+from networkx.exception import NetworkXError
 from collections import MutableMapping
 
 
@@ -309,7 +310,7 @@ class GraphNodeMapping(GraphMapping):
             (v, valtyp) = self.gorm.stringify(value)
             self.gorm.cursor.execute(
                 "DELETE FROM node_val WHERE graph=? AND node=? AND key=? AND branch=? AND rev=?;",
-                (self.graph.name, self.node, k, branch, rev)
+                (self.graph.name, self.node, key, branch, rev)
             )
             self.gorm.cursor.execute(
                 "INSERT INTO node_val ("
@@ -344,6 +345,12 @@ class GraphNodeMapping(GraphMapping):
                 "(?, ?, ?, ?, 'unset');",
                 (self.graph.name, self.node, key, branch, rev)
             )
+
+        def clear(self):
+            """Delete everything and stop existing"""
+            for k in self:
+                del self[k]
+            self.exists = False
 
 
 class GraphEdgeMapping(GraphMapping):
@@ -598,7 +605,7 @@ class GraphEdgeMapping(GraphMapping):
                     self.nodeA,
                     self.nodeB,
                     self.idx,
-                    k,
+                    key,
                     branch,
                     rev
                 )
@@ -623,6 +630,11 @@ class GraphEdgeMapping(GraphMapping):
                     rev,
                 )
             )
+
+        def clear(self):
+            for k in self:
+                del self[k]
+            self.exists = False
 
 
 class GraphSuccessorsMapping(GraphEdgeMapping):
@@ -1006,6 +1018,18 @@ class DiGraph(networkx.DiGraph):
     def name(self, v):
         raise TypeError("gorm graphs can't be renamed")
 
+    def remove_edge(self, u, v):
+        try:
+            del self.succ[u][v]
+        except KeyError:
+            raise NetworkXError("The edge {}-{} is not in the graph.".format(u, v))
+
+    def remove_edges_from(self, ebunch):
+        for e in ebunch:
+            (u, v) = e[:2]
+            if u in self.succ and v in self.succ[u]:
+                del self.succ[u][v]
+
 
 class MultiGraph(networkx.MultiGraph):
     def __init__(self, gorm, name, data=None, **attr):
@@ -1047,3 +1071,26 @@ class MultiDiGraph(networkx.MultiDiGraph):
     @name.setter
     def name(self, v):
         raise TypeError("gorm graphs can't be renamed")
+
+    def remove_edge(self, u, v, key=None):
+        try:
+            d = self.adj[u][v]
+        except KeyError:
+            raise NetworkXError("The edge {}-{} is not in the graph.".format(u, v))
+        if key is None:
+            d.popitem()
+        else:
+            try:
+                del d[key]
+            except KeyError:
+                raise NetworkXError(
+                    "The edge {}-{} with key {} is not in the graph.".format(u, v, key)
+                )
+        if len(d) == 0:
+            del self.succ[u][v]
+
+    def remove_edges_from(self, ebunch):
+        for e in ebunch:
+            (u, v) = e[:2]
+            if u in self.succ and v in self.succ[u]:
+                del self.succ[u][v]
