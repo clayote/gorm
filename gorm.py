@@ -63,10 +63,10 @@ class ORM(object):
         self.sql_flavor = sql_flavor
         if connector is None:
             from sqlite3 import connect
-            self.connector = connect(':memory:')
+            self.connection = connect(':memory:')
         else:
-            self.connector = connector
-        self.cursor = self.connector.cursor()
+            self.connection = connector
+        self.cursor = self.connection.cursor()
 
     def __enter__(self):
         return self
@@ -97,6 +97,19 @@ class ORM(object):
 
     @rev.setter
     def rev(self, v):
+        # first make sure the cursor is not before the start of this branch
+        branch = self.branch
+        self.cursor.execute(
+            "SELECT parent, parent_rev FROM branches WHERE branch=?;",
+            (branch,)
+        )
+        (parent, parent_rev) = self.cursor.fetchone()
+        if v < int(parent_rev):
+            raise ValueError(
+                "The revision number {revn} "
+                "occurs before the start of "
+                "the branch {brnch}".format(revn=v, brnch=branch)
+            )
         self.cursor.execute(
             "UPDATE global SET value=? WHERE key='rev';",
             (v,)
@@ -104,7 +117,7 @@ class ORM(object):
 
     def close(self):
         # maybe these should be in the opposite order?
-        self.connector.commit()
+        self.connection.commit()
         self.cursor.close()
 
     def initdb(self):
@@ -203,7 +216,6 @@ class ORM(object):
         ]
         for decl in tabdecls:
             s = decl.format(**self.sql_types[self.sql_flavor])
-            print(s)
             self.cursor.execute(s)
         globs = [
             ("branch", "master", "str"),
@@ -351,26 +363,26 @@ class ORM(object):
     def _node_exists(self, graph, node):
         branches = tuple(self._active_branches())
         rev = self.rev
-        (name, nametype) = self.stringify(node)
         self.cursor.execute(
             "SELECT extant FROM nodes JOIN ("
-            "SELECT graph, node, branch, MAX(rev) AS rev FROM nodes "
+            "SELECT graph, node, MAX(rev) AS rev FROM nodes "
             "WHERE graph=? "
             "AND node=? "
-            "AND nametype=? "
             "AND rev<=? "
             "AND branch IN ({qms})) AS hirev "
             "ON nodes.graph=hirev.graph "
             "AND nodes.node=hirev.node "
-            "AND nodes.branch=hirev.branch "
-            "AND nodes.rev=hirev.rev;".format(
+            "AND nodes.rev=hirev.rev "
+            "AND branch IN ({qms});".format(
                 qms=", ".join("?" * len(branches))
             ), (
                 unicode(graph),
-                name,
-                nametype,
+                unicode(node),
                 rev
-            ) + branches
+            ) + branches * 2
         )
         row = self.cursor.fetchone()
-        return (row is not None and row[0])
+        try:
+            return bool(row[0])
+        except TypeError:
+            return False
