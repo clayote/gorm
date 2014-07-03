@@ -1,6 +1,6 @@
 import networkx
 from networkx.exception import NetworkXError
-from collections import MutableMapping
+from collections import MutableMapping, defaultdict
 
 
 class GraphMapping(MutableMapping):
@@ -11,25 +11,35 @@ class GraphMapping(MutableMapping):
         self.gorm = graph.gorm
 
     def __getitem__(self, key):
+        if key == 'graph':
+            return dict(self)
         rev = self.gorm.rev
         branches = tuple(self.gorm._active_branches())
         self.gorm.cursor.execute(
-            "SELECT rev, value, type FROM graph_val WHERE "
+            "SELECT value, valtype FROM graph_val JOIN ("
+            "SELECT graph, key, MAX(rev) AS rev "
+            "FROM graph_val WHERE "
             "graph=? AND "
             "key=? AND "
             "rev<=? AND "
-            "branch IN ({qms});".format(
+            "branch IN ({qms}) AND "
+            "valtype<>'unset' "
+            "GROUP BY graph, key) AS hirev "
+            "ON graph_val.graph=hirev.graph "
+            "AND graph_val.key=hirev.key "
+            "WHERE branch IN ({qms});".format(
                 qms=", ".join("?" * len(branches))
             ),
-            (self.graph.name, key, rev) + branches
+            (
+                self.graph.name,
+                key,
+                rev
+            ) + branches * 2
         )
-        if self.gorm.cursor.rowcount <= 0:
-            raise KeyError("No value for key")
-        (rev, value, typ) = self.gorm.cursor.fetchone()
-        for row in self.gorm.cursor:
-            if row[0] > rev:
-                (rev, value, typ) = row
-        return self.gorm.cast(value, typ)
+        try:
+            return self.gorm.cast(*self.gorm.cursor.fetchone())
+        except TypeError:
+            raise KeyError("Key not set for graph")
 
     def __setitem__(self, key, value):
         """Set key=value at the present branch and revision"""
@@ -79,7 +89,7 @@ class GraphMapping(MutableMapping):
         rev = self.gorm.rev
         branches = tuple(self.gorm._active_branches())
         self.gorm.cursor.execute(
-            "SELECT key FROM graph_val JOIN ("
+            "SELECT graph_val.key FROM graph_val JOIN ("
             "SELECT graph, key, MAX(rev) AS rev "
             "FROM graph_val WHERE "
             "graph=? AND "
@@ -96,28 +106,39 @@ class GraphMapping(MutableMapping):
                 rev
             ) + branches * 2
         )
-        for row in self.gorm.cursor:
-            r = row[0]
+        for row in self.gorm.cursor.fetchall():
             try:
-                yield int(r)
+                yield int(row[0])
             except ValueError:
-                yield r
+                yield row[0]
 
     def __len__(self):
-        n = 0
-        for k in self:
-            n += 1
-        return n
+        rev = self.gorm.rev
+        branches = tuple(self.gorm._active_branches())
+        self.gorm.cursor.execute(
+            "SELECT COUNT(graph_val.key) FROM graph_val JOIN ("
+            "SELECT graph, key, MAX(rev) AS rev "
+            "FROM graph_val WHERE "
+            "graph=? AND "
+            "rev<=? AND "
+            "branch IN ({qms}) AND "
+            "valtype<>'unset' "
+            "GROUP BY graph, key) AS hirev ON "
+            "graph_val.graph=hirev.graph AND "
+            "graph_val.rev=hirev.rev WHERE "
+            "branch IN ({qms});".format(
+                qms=", ".join("?" * len(branches))
+            ), (
+                self.graph.name,
+                rev
+            ) + branches * 2
+        )
+        return int(self.gorm.cursor.fetchone()[0])
 
     def clear(self):
         """Delete everything"""
         for k in self:
             del self[k]
-
-    def __dict__(self):
-        r = {}
-        r.update(self)
-        return r
 
     def __repr__(self):
         return repr(dict(self))
@@ -155,20 +176,21 @@ class GraphNodeMapping(GraphMapping):
         n.clear()
 
     def __iter__(self):
-        for node in self.gorm._iternodes(self.graph):
-            yield node
+        return self.gorm._iternodes(self.graph.name)
 
     def __len__(self):
-        n = 0
-        for node in iter(self):
-            n += 1
-        return n
+        return self.gorm._countnodes(self.graph.name)
 
-    def __dict__(self):
-        r = {}
-        for (name, node) in self.iteritems():
-            r[name] = dict(node)
-        return r
+    def __eq__(self, other):
+        if not hasattr(other, 'keys'):
+            return False
+        if set(self.keys()) != set(other.keys()):
+            return False
+        for k in self.iterkeys():
+            if dict(self[k]) != dict(other[k]):
+                return False
+        return True
+
 
     class Node(GraphMapping):
         """Mapping for node attributes"""
@@ -296,12 +318,11 @@ class GraphNodeMapping(GraphMapping):
                     rev
                 ) + branches * 2
             )
-            for row in self.gorm.cursor:
-                r = row[0]
+            for row in self.gorm.cursor.fetchall():
                 try:
-                    yield int(r)
+                    yield int(row[0])
                 except ValueError:
-                    yield r
+                    yield row[0]
 
         def __setitem__(self, key, value):
             """Set key=value at the present branch and revision. Overwrite if necessary."""
@@ -363,20 +384,23 @@ class GraphEdgeMapping(GraphMapping):
         self.gorm = graph.gorm
 
     def __iter__(self):
-        for node in self.gorm._iternodes(self.graph):
-            yield node
+        return self.gorm._iternodes(self.graph.name)
 
     def __len__(self):
-        n = 0
-        for nodeA in self:
-            n += 1
-        return n
+        return self.gorm._countnodes(self.graph.name)
 
-    def __dict__(self):
-        r = {}
-        for (nodeA, succ) in self.iteritems():
-            r[nodeA] = dict(succ)
-        return r
+    def __eq__(self, other):
+        if not hasattr(other, 'keys'):
+            return False
+        myks = set(self.keys())
+        if myks != set(other.keys()):
+            return False
+        # not really sure why, but if I iterate over myself rather
+        # than myks I don't really iterate over all the keys
+        for k in myks:
+            if dict(self[k]) != dict(other[k]):
+                return False
+        return True
 
     class Edge(GraphMapping):
         def __init__(self, graph, nodeA, nodeB, idx=0):
@@ -529,12 +553,11 @@ class GraphEdgeMapping(GraphMapping):
                     rev
                 ) + branches * 2
             )
-            for row in self.gorm.cursor:
-                r = row[0]
+            for row in self.gorm.cursor.fetchall():
                 try:
-                    yield int(r)
+                    yield int(row[0])
                 except ValueError:
-                    yield r
+                    yield row[0]
 
         def __setitem__(self, key, value):
             """Set a database record to say that key=value at the present branch
@@ -685,17 +708,40 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
                     rev
                 ) + branches * 2
             )
-            for row in self.gorm.cursor:
+            for row in self.gorm.cursor.fetchall():
                 try:
                     yield int(row[0])
                 except ValueError:
                     yield row[0]
 
         def __len__(self):
-            n = 0
-            for b in self:
-                n += 1
-            return n
+            branches = tuple(self.gorm._active_branches())
+            rev = self.gorm.rev
+            self.gorm.cursor.execute(
+                "SELECT COUNT(DISTINCT edges.nodeB) FROM edges JOIN "
+                "(SELECT graph, nodeA, nodeB, idx, MAX(rev) AS rev "
+                "FROM edges WHERE "
+                "graph=? AND "
+                "nodeA=? AND "
+                "rev<=? AND "
+                "branch IN ({qms}) "
+                "GROUP BY graph, nodeA, nodeB, idx) AS hirev "
+                "ON edges.graph=hirev.graph "
+                "AND edges.nodeA=hirev.nodeA "
+                "AND edges.nodeB=hirev.nodeB "
+                "AND edges.idx=hirev.idx "
+                "AND edges.rev=hirev.rev "
+                "WHERE edges.extant={true} "
+                "AND branch IN ({qms});".format(
+                    qms=", ".join("?" * len(branches)),
+                    true=self.gorm.sql_types[self.gorm.sql_flavor]['true']
+                ), (
+                    self.graph.name,
+                    self.nodeA,
+                    rev
+                ) + branches * 2
+            )
+            return int(self.gorm.cursor.fetchone()[0])
 
         def __getitem__(self, nodeB):
             r = self.Edge(self.graph, self.nodeA, nodeB)
@@ -714,12 +760,6 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
             if not e.exists:
                 raise KeyError("No such edge")
             e.clear()
-
-        def __dict__(self):
-            r = {}
-            for (nodeB, edge) in self.iteritems():
-                r[nodeB] = dict(edge)
-            return r
 
         def clear(self):
             for nodeB in self:
@@ -767,7 +807,6 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                 "AND edges.nodeB=hirev.nodeB "
                 "AND edges.idx=hirev.idx "
                 "AND edges.rev=hirev.rev "
-                "JOIN nodes ON nodes.node=edges.nodeA "
                 "WHERE edges.extant={true} "
                 "AND edges.branch IN ({qms});".format(
                     qms=", ".join("?" * len(branches)),
@@ -778,17 +817,40 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                     rev
                 ) + branches * 2
             )
-            for row in self.gorm.cursor:
+            for row in self.gorm.cursor.fetchall():
                 try:
                     yield int(row[0])
                 except ValueError:
                     yield row[0]
 
         def __len__(self):
-            n = 0
-            for a in self:
-                n += 1
-            return n
+            branches = tuple(self.gorm._active_branches())
+            rev = self.gorm.rev
+            self.gorm.cursor.execute(
+                "SELECT COUNT(DISTINCT edges.nodeA) FROM edges JOIN "
+                "(SELECT graph, nodeA, nodeB, idx, MAX(rev) AS rev "
+                "FROM edges WHERE "
+                "graph=? AND "
+                "nodeB=? AND "
+                "rev<=? AND "
+                "branch IN ({qms}) "
+                "GROUP BY graph, nodeA, nodeB, idx) AS hirev "
+                "ON edges.graph=hirev.graph "
+                "AND edges.nodeA=hirev.nodeA "
+                "AND edges.nodeB=hirev.nodeB "
+                "AND edges.idx=hirev.idx "
+                "AND edges.rev=hirev.rev "
+                "WHERE edges.extant={true} "
+                "AND edges.branch IN ({qms});".format(
+                    qms=", ".join("?" * len(branches)),
+                    true=self.gorm.sql_types[self.gorm.sql_flavor]['true']
+                ), (
+                    self.graph.name,
+                    self.nodeB,
+                    rev
+                ) + branches * 2
+            )
+            return int(self.gorm.cursor.fetchone()[0])
 
         def __getitem__(self, nodeA):
             r = self._getsub(nodeA)
@@ -896,12 +958,6 @@ class MultiEdges(GraphEdgeMapping):
             raise KeyError("No edge at that index")
         e.clear()
 
-    def __dict__(self):
-        r = {}
-        for (idx, edge) in self.iteritems():
-            r[idx] = dict(edge)
-        return r
-
     def clear(self):
         for idx in self:
             del self[idx]
@@ -984,6 +1040,21 @@ class Graph(networkx.Graph):
         self.adj.clear()
         self.node.clear()
         self.graph.clear()
+
+    def keys(self):
+        return self.graph.keys
+
+    def iterkeys(self):
+        return self.graph.iterkeys()
+
+    def itervalues(self):
+        return self.graph.itervalues()
+
+    def iteritems(self):
+        return self.graph.iteritems()
+
+    def values(self):
+        return self.graph.values()
 
 
 class DiGraph(networkx.DiGraph):
@@ -1091,6 +1162,7 @@ class MultiDiGraph(networkx.MultiDiGraph):
 
     def remove_edges_from(self, ebunch):
         for e in ebunch:
-            (u, v) = e[:2]
-            if u in self.succ and v in self.succ[u]:
-                del self.succ[u][v]
+            try:
+                self.remove_edge(*e[:3])
+            except NetworkXError:
+                pass

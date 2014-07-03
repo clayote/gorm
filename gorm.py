@@ -276,7 +276,10 @@ class ORM(object):
 
     def get_graph(self, name):
         self.cursor.execute("SELECT type FROM graphs WHERE graph=?;", (name,))
-        (type_s,) = self.cursor.fetchone()
+        try:
+            (type_s,) = self.cursor.fetchone()
+        except TypeError:
+            raise ValueError("I don't know of a graph named {}".format(name))
         return {
             'Graph': Graph,
             'DiGraph': DiGraph,
@@ -292,7 +295,7 @@ class ORM(object):
                 "DELETE FROM nodes WHERE graph=?;",
                 "DELETE FROM graphs WHERE graph=?;"
         ]:
-            self.cursor.execute(statement, name)
+            self.cursor.execute(statement, (name,))
 
     def _active_branches(self):
         branch = self.branch
@@ -305,10 +308,12 @@ class ORM(object):
         rev = self.rev
         branches = tuple(self._active_branches())
         self.cursor.execute(
-            "SELECT nodes.node, nametype FROM nodes "
-            "JOIN (SELECT node, rev "
+            "SELECT nodes.node FROM nodes "
+            "JOIN (SELECT graph, node, rev "
             "FROM nodes WHERE graph=? AND rev<=? AND branch IN ({qms}) "
-            "GROUP BY node) AS hirev ON nodes.node=hirev.node "
+            "GROUP BY graph, node) AS hirev ON "
+            "nodes.graph=hirev.graph AND "
+            "nodes.node=hirev.node "
             "AND nodes.rev=hirev.rev "
             "AND branch IN ({qms}) "
             "WHERE extant={true};".format(
@@ -317,8 +322,31 @@ class ORM(object):
             ),
             (unicode(graph), rev) + branches * 2
         )
-        for (name, nametype) in self.cursor:
-            yield self.cast(name, nametype)
+        for row in self.cursor.fetchall():
+            try:
+                yield int(row[0])
+            except ValueError:
+                yield row[0]
+
+    def _countnodes(self, graph):
+        rev = self.rev
+        branches = tuple(self._active_branches())
+        self.cursor.execute(
+            "SELECT COUNT(nodes.node) FROM nodes "
+            "JOIN (SELECT graph, node, rev "
+            "FROM nodes WHERE graph=? AND rev<=? AND branch IN ({qms}) "
+            "GROUP BY graph, node) AS hirev ON "
+            "nodes.graph=hirev.graph AND "
+            "nodes.node=hirev.node AND "
+            "nodes.rev=hirev.rev AND "
+            "branch IN ({qms}) "
+            "WHERE extant={true};".format(
+                qms=", ".join("?" * len(branches)),
+                true=self.sql_types[self.sql_flavor]['true']
+            ),
+            (unicode(graph), rev) + branches * 2
+        )
+        return int(self.cursor.fetchone()[0])
 
     def _node_exists(self, graph, node):
         branches = tuple(self._active_branches())
