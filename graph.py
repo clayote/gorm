@@ -1,6 +1,6 @@
 import networkx
 from networkx.exception import NetworkXError
-from collections import MutableMapping, defaultdict
+from collections import MutableMapping
 
 
 class GraphMapping(MutableMapping):
@@ -13,33 +13,37 @@ class GraphMapping(MutableMapping):
     def __getitem__(self, key):
         if key == 'graph':
             return dict(self)
-        rev = self.gorm.rev
-        branches = tuple(self.gorm._active_branches())
-        self.gorm.cursor.execute(
-            "SELECT value, valtype FROM graph_val JOIN ("
-            "SELECT graph, key, MAX(rev) AS rev "
-            "FROM graph_val WHERE "
-            "graph=? AND "
-            "key=? AND "
-            "rev<=? AND "
-            "branch IN ({qms}) AND "
-            "valtype<>'unset' "
-            "GROUP BY graph, key) AS hirev "
-            "ON graph_val.graph=hirev.graph "
-            "AND graph_val.key=hirev.key "
-            "WHERE branch IN ({qms});".format(
-                qms=", ".join("?" * len(branches))
-            ),
-            (
-                self.graph.name,
-                key,
-                rev
-            ) + branches * 2
-        )
-        try:
-            return self.gorm.cast(*self.gorm.cursor.fetchone())
-        except TypeError:
-            raise KeyError("Key not set for graph")
+        for (branch, rev) in self.gorm._active_branches():
+            self.gorm.cursor.execute(
+                "SELECT value, valtype FROM graph_val JOIN ("
+                "SELECT graph, key, branch, MAX(rev) AS rev "
+                "FROM graph_val WHERE "
+                "graph=? AND "
+                "key=? AND "
+                "branch=? AND "
+                "rev<=? GROUP BY graph, key, branch) AS hirev "
+                "ON graph_val.graph=hirev.graph "
+                "AND graph_val.key=hirev.key "
+                "AND graph_val.branch=hirev.branch "
+                "AND graph_val.rev=hirev.rev;",
+                (
+                    self.graph.name,
+                    key,
+                    branch,
+                    rev
+                )
+            )
+            results = self.gorm.cursor.fetchall()
+            if len(results) == 0:
+                continue
+            elif len(results) > 1:
+                raise ValueError("Silly data in graph_val table")
+            else:
+                (value, valtype) = results.pop()
+                if valtype == 'unset':
+                    raise KeyError("key not set right now")
+                return self.gorm.cast(value, valtype)
+        raise KeyError("key is not set, ever")
 
     def __setitem__(self, key, value):
         """Set key=value at the present branch and revision"""
@@ -86,54 +90,43 @@ class GraphMapping(MutableMapping):
         )
 
     def __iter__(self):
-        rev = self.gorm.rev
-        branches = tuple(self.gorm._active_branches())
-        self.gorm.cursor.execute(
-            "SELECT graph_val.key FROM graph_val JOIN ("
-            "SELECT graph, key, MAX(rev) AS rev "
-            "FROM graph_val WHERE "
-            "graph=? AND "
-            "rev<=? AND "
-            "branch IN ({qms}) AND "
-            "valtype<>'unset' "
-            "GROUP BY graph, key) AS hirev ON "
-            "graph_val.graph=hirev.graph AND "
-            "graph_val.rev=hirev.rev WHERE "
-            "branch IN ({qms});".format(
-                qms=", ".join("?" * len(branches))
-            ), (
-                self.graph.name,
-                rev
-            ) + branches * 2
-        )
-        for row in self.gorm.cursor.fetchall():
-            try:
-                yield int(row[0])
-            except ValueError:
-                yield row[0]
+        seen = set()
+        for (branch, rev) in self.gorm._active_branches():
+            self.gorm.cursor.execute(
+                "SELECT graph_val.key, graph_val.valtype='unset' "
+                "FROM graph_val JOIN ("
+                "SELECT graph, key, branch, MAX(rev) AS rev FROM graph_val "
+                "WHERE graph=? "
+                "AND branch=? "
+                "AND rev<=? "
+                "GROUP BY graph, key, branch) AS hirev "
+                "ON graph_val.graph=hirev.graph "
+                "AND graph_val.key=hirev.key "
+                "AND graph_val.branch=hirev.branch "
+                "AND graph_val.rev=hirev.rev;",
+                (
+                    self.graph.name,
+                    branch,
+                    rev
+                )
+            )
+            for row in self.gorm.cursor.fetchall():
+                try:
+                    key = int(row[0])
+                except ValueError:
+                    key = row[0]
+                if key in seen:
+                    continue
+                seen.add(key)
+                is_unset = bool(row[1])
+                if not is_unset:
+                    yield key
 
     def __len__(self):
-        rev = self.gorm.rev
-        branches = tuple(self.gorm._active_branches())
-        self.gorm.cursor.execute(
-            "SELECT COUNT(graph_val.key) FROM graph_val JOIN ("
-            "SELECT graph, key, MAX(rev) AS rev "
-            "FROM graph_val WHERE "
-            "graph=? AND "
-            "rev<=? AND "
-            "branch IN ({qms}) AND "
-            "valtype<>'unset' "
-            "GROUP BY graph, key) AS hirev ON "
-            "graph_val.graph=hirev.graph AND "
-            "graph_val.rev=hirev.rev WHERE "
-            "branch IN ({qms});".format(
-                qms=", ".join("?" * len(branches))
-            ), (
-                self.graph.name,
-                rev
-            ) + branches * 2
-        )
-        return int(self.gorm.cursor.fetchone()[0])
+        n = 0
+        for k in iter(self):
+            n += 1
+        return n
 
     def clear(self):
         """Delete everything"""
@@ -197,32 +190,7 @@ class GraphNodeMapping(GraphMapping):
 
         @property
         def exists(self):
-            branches = tuple(self.gorm._active_branches())
-            rev = self.gorm.rev
-            self.gorm.cursor.execute(
-                "SELECT nodes.extant FROM nodes JOIN ("
-                "SELECT graph, node, MAX(rev) AS rev "
-                "FROM nodes WHERE "
-                "graph=? AND "
-                "node=? AND "
-                "rev<=? AND "
-                "branch IN ({qms}) "
-                "GROUP BY graph, node) AS hirev "
-                "ON nodes.graph=hirev.graph "
-                "AND nodes.node=hirev.node "
-                "AND nodes.rev=hirev.rev "
-                "WHERE branch IN ({qms});".format(
-                    qms=", ".join("?" * len(branches))
-                ), (
-                    self.graph.name,
-                    self.node,
-                    rev
-                ) + branches * 2
-            )
-            try:
-                return bool(self.gorm.cursor.fetchone()[0])
-            except TypeError:
-                return False
+            return self.gorm._node_exists(self.graph.name, self.node)
 
         @exists.setter
         def exists(self, v):
@@ -230,7 +198,6 @@ class GraphNodeMapping(GraphMapping):
                 raise TypeError("Existence is boolean")
             branch = self.gorm.branch
             rev=self.gorm.rev
-            (name, nametype) = self.gorm.stringify(self.node)
             self.gorm.cursor.execute(
                 "DELETE FROM nodes WHERE "
                 "graph=? AND "
@@ -239,7 +206,7 @@ class GraphNodeMapping(GraphMapping):
                 "rev=?;",
                 (
                     self.graph.name,
-                    name,
+                    self.node,
                     branch,
                     rev
                 )
@@ -250,15 +217,13 @@ class GraphNodeMapping(GraphMapping):
                 "node, "
                 "branch, "
                 "rev, "
-                "extant, "
-                "nametype) VALUES (?, ?, ?, ?, ?, ?);",
+                "extant) VALUES (?, ?, ?, ?, ?);",
                 (
                     self.graph.name,
-                    name,
+                    self.node,
                     branch,
                     rev,
-                    v,
-                    nametype
+                    v
                 )
             )
 
@@ -269,60 +234,74 @@ class GraphNodeMapping(GraphMapping):
             self.name = self.node
 
         def __getitem__(self, key):
-            rev = self.gorm.rev
-            branches = tuple(self.gorm._active_branches())
-            self.gorm.cursor.execute(
-                "SELECT node_val.value, node_val.type FROM node_val JOIN ("
-                "SELECT graph, node, key, MAX(rev) AS rev "
-                "FROM node_val WHERE "
-                "graph=? AND "
-                "node=? AND "
-                "key=? AND "
-                "rev<=? AND "
-                "branch IN ({qms}) "
-                "AND type<>'unset' "
-                "GROUP BY graph, node, key) AS hirev "
-                "ON node_val.graph=hirev.graph "
-                "AND node_val.node=hirev.node "
-                "AND node_val.key=hirev.key "
-                "AND node_val.rev=hirev.rev "
-                "WHERE branch IN ({qms});".format(
-                    qms=", ".join("?" * len(branches))
-                ),
-                (self.graph.name, self.node, key, rev) + branches * 2
-            )
-            return self.gorm.cast(*self.gorm.cursor.fetchone())
+            for (branch, rev) in self.gorm._active_branches():
+                self.gorm.cursor.execute(
+                    "SELECT node_val.value, node_val.valtype FROM node_val JOIN ("
+                    "SELECT graph, node, key, branch, MAX(rev) AS rev "
+                    "FROM node_val WHERE "
+                    "graph=? AND "
+                    "node=? AND "
+                    "key=? AND "
+                    "branch=? AND "
+                    "rev<=? "
+                    "GROUP BY graph, node, key, branch) AS hirev "
+                    "ON node_val.graph=hirev.graph "
+                    "AND node_val.node=hirev.node "
+                    "AND node_val.key=hirev.key "
+                    "AND node_val.branch=hirev.branch "
+                    "AND node_val.rev=hirev.rev;",
+                    (
+                        self.graph.name,
+                        self.node,
+                        key,
+                        branch,
+                        rev
+                    )
+                )
+                data = self.gorm.cursor.fetchall()
+                if len(data) == 0:
+                    continue
+                elif len(data) > 1:
+                    raise ValueError("Silly data in node_val table")
+                else:
+                    (value, valtype) = data.pop()
+                    if valtype == 'unset':
+                        raise KeyError("key unset at the moment")
+                    return self.gorm.cast(value, valtype)
+            raise KeyError("key never set")
 
         def __iter__(self):
-            rev = self.gorm.rev
-            branches = tuple(self.gorm._active_branches())
-            self.gorm.cursor.execute(
-                "SELECT node_val.key FROM node_val JOIN "
-                "(SELECT graph, node, key, MAX(rev) AS rev "
-                "FROM node_val WHERE "
-                "graph=? AND "
-                "node=? AND "
-                "rev<=? AND "
-                "branch IN ({qms}) "
-                "GROUP BY graph, node, key) AS hirev "
-                "ON node_val.graph=hirev.graph "
-                "AND node_val.node=hirev.node "
-                "AND node_val.key=hirev.key "
-                "AND node_val.rev=hirev.rev "
-                "WHERE node_val.valtype<>'unset' "
-                "AND branch IN ({qms});".format(
-                    qms=", ".join("?" * len(branches))
-                ), (
-                    self.graph.name,
-                    self.node,
-                    rev
-                ) + branches * 2
-            )
-            for row in self.gorm.cursor.fetchall():
-                try:
-                    yield int(row[0])
-                except ValueError:
-                    yield row[0]
+            seen = set()
+            for (branch, rev) in self.gorm._active_branches():
+                self.gorm.cursor.execute(
+                    "SELECT node_val.key, node_val.valtype='unset' FROM node_val JOIN ("
+                    "SELECT graph, node, key, branch, MAX(rev) AS rev "
+                    "FROM node_val WHERE "
+                    "graph=? AND "
+                    "node=? AND "
+                    "branch=? AND "
+                    "rev<=? "
+                    "GROUP BY graph, node, key, branch) AS hirev ON "
+                    "node_val.graph=hirev.graph AND "
+                    "node_val.node=hirev.node AND "
+                    "node_val.key=hirev.key AND "
+                    "node_val.branch=hirev.branch AND "
+                    "node_val.rev=hirev.rev;",
+                    (
+                        self.graph.name,
+                        self.node,
+                        branch,
+                        rev
+                    )
+                )
+                for (key, valtype) in self.gorm.cursor.fetchall():
+                    try:
+                        key = int(key)
+                    except ValueError:
+                        pass
+                    if key not in seen and valtype != 'unset':
+                        yield key
+                    seen.add(key)
 
         def __setitem__(self, key, value):
             """Set key=value at the present branch and revision. Overwrite if necessary."""
@@ -406,44 +385,52 @@ class GraphEdgeMapping(GraphMapping):
         def __init__(self, graph, nodeA, nodeB, idx=0):
             self.graph = graph
             self.gorm = graph.gorm
-            self.nodeA = nodeA
-            self.nodeB = nodeB
+            try:
+                self.nodeA = int(nodeA)
+            except ValueError:
+                self.nodeA = nodeA
+            try:
+                self.nodeB = int(nodeB)
+            except ValueError:
+                self.nodeB = nodeB
             self.idx = idx
 
         @property
         def exists(self):
-            branches = tuple(self.gorm._active_branches())
-            rev = self.gorm.rev
-            self.gorm.cursor.execute(
-                "SELECT edges.extant FROM edges JOIN ( "
-                "SELECT graph, nodeA, nodeB, idx, MAX(rev) AS rev "
-                "FROM edges WHERE "
-                "graph=? AND "
-                "nodeA=? AND "
-                "nodeB=? AND "
-                "idx=? AND "
-                "rev<=? AND "
-                "branch IN ({qms}) "
-                "GROUP BY graph, nodeA, nodeB, idx) AS hirev "
-                "ON edges.graph=hirev.graph "
-                "AND edges.nodeA=hirev.nodeA "
-                "AND edges.nodeB=hirev.nodeB "
-                "AND edges.idx=hirev.idx "
-                "AND edges.rev=hirev.rev "
-                "WHERE branch IN ({qms});".format(
-                    qms=", ".join("?" * len(branches))
-                ), (
-                    self.graph.name,
-                    unicode(self.nodeA),
-                    unicode(self.nodeB),
-                    self.idx,
-                    rev
-                ) + branches * 2
-            )
-            try:
-                return bool(self.gorm.cursor.fetchone()[0])
-            except TypeError:  # no record
-                return False
+            for (branch, rev) in self.gorm._active_branches():
+                self.gorm.cursor.execute(
+                    "SELECT edges.extant FROM edges JOIN ("
+                    "SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev FROM edges "
+                    "WHERE graph=? "
+                    "AND nodeA=? "
+                    "AND nodeB=? "
+                    "AND idx=? "
+                    "AND branch=? "
+                    "AND rev<=? "
+                    "GROUP BY graph, nodeA, nodeB, idx, branch) AS hirev "
+                    "ON edges.graph=hirev.graph "
+                    "AND edges.nodeA=hirev.nodeA "
+                    "AND edges.nodeB=hirev.nodeB "
+                    "AND edges.idx=hirev.idx "
+                    "AND edges.branch=hirev.branch "
+                    "AND edges.rev=hirev.rev;",
+                    (
+                        self.graph.name,
+                        self.nodeA,
+                        self.nodeB,
+                        self.idx,
+                        branch,
+                        rev
+                    )
+                )
+                data = self.gorm.cursor.fetchall()
+                if len(data) == 0:
+                    continue
+                elif len(data) > 1:
+                    raise ValueError("Silly data in edges table")
+                else:
+                    return bool(data.pop()[0])
+            return False  # also, how did I get here
 
         @exists.setter
         def exists(self, v):
@@ -489,75 +476,79 @@ class GraphEdgeMapping(GraphMapping):
             )
 
         def __getitem__(self, key):
-            rev = self.gorm.rev
-            branches = tuple(self.gorm._active_branches())
-            self.gorm.cursor.execute(
-                "SELECT edge_val.value, edge_val.valtype FROM edge_val JOIN "
-                "(SELECT graph, nodeA, nodeB, idx, key, MAX(rev) AS rev "
-                "FROM edge_val WHERE "
-                "graph=? AND "
-                "nodeA=? AND "
-                "nodeB=? AND "
-                "idx=? AND "
-                "key=? AND "
-                "rev<=? AND "
-                "branch IN ({qms})) AS hirev "
-                "ON edge_val.graph=hirev.graph "
-                "AND edge_val.nodeA=hirev.nodeA "
-                "AND edge_val.nodeB=hirev.nodeB "
-                "AND edge_val.idx=hirev.idx "
-                "AND edge_val.key=hirev.key "
-                "AND edge_val.rev=hirev.rev "
-                "WHERE edge_val.valtype<>'unset';".format(
-                    qms=", ".join("?" * len(branches))
-                ),
-                (
-                    self.graph.name,
-                    unicode(self.nodeA),
-                    unicode(self.nodeB),
-                    self.idx,
-                    unicode(key),
-                    rev
-                ) + branches
-            )
-            return self.gorm.cast(*self.gorm.cursor.fetchone())
+            for (branch, rev) in self.gorm._active_branches():
+                self.gorm.cursor.execute(
+                    "SELECT edge_val.value, edge_val.valtype FROM edge_val JOIN ("
+                    "SELECT graph, nodeA, nodeB, idx, key, branch, MAX(rev) AS rev "
+                    "FROM edge_val WHERE "
+                    "graph=? AND "
+                    "nodeA=? AND "
+                    "nodeB=? AND "
+                    "idx=? AND "
+                    "key=? AND "
+                    "branch=? AND "
+                    "rev<=? "
+                    "GROUP BY graph, nodeA, nodeB, idx, key, branch) AS hirev "
+                    "ON edge_val.graph=hirev.graph "
+                    "AND edge_val.nodeA=hirev.nodeA "
+                    "AND edge_val.nodeB=hirev.nodeB "
+                    "AND edge_val.idx=hirev.idx "
+                    "AND edge_val.key=hirev.key "
+                    "AND edge_val.branch=hirev.branch "
+                    "AND edge_val.rev=hirev.rev;",
+                    (
+                        self.graph.name,
+                        self.nodeA,
+                        self.nodeB,
+                        self.idx,
+                        key,
+                        branch,
+                        rev
+                    )
+                )
+                data = self.gorm.cursor.fetchall()
+                if len(data) == 0:
+                    continue
+                elif len(data) > 1:
+                    raise ValueError("Silly data in edge_val table")
+                else:
+                    (value, valtype) = data.pop()
+                    if valtype == 'unset':
+                        raise KeyError("key not set at the moment")
+                    return self.gorm.cast(value, valtype)
+            raise KeyError('key never set')
 
         def __iter__(self):
-            rev = self.gorm.rev
-            branches = tuple(self.gorm._active_branches())
-            self.gorm.cursor.execute(
-                "SELECT DISTINCT edge_val.key FROM edge_val JOIN ("
-                "SELECT graph, nodeA, nodeB, idx, key, MAX(rev) AS rev "
-                "FROM edge_val WHERE "
-                "graph=? AND "
-                "nodeA=? AND "
-                "nodeB=? AND "
-                "idx=? AND "
-                "rev<=? AND "
-                "branch IN ({qms})"
-                "GROUP BY graph, nodeA, nodeB, idx, key) AS hirev "
-                "ON edge_val.graph=hirev.graph "
-                "AND edge_val.nodeA=hirev.nodeA "
-                "AND edge_val.nodeB=hirev.nodeB "
-                "AND edge_val.idx=hirev.idx "
-                "AND edge_val.rev=hirev.rev "
-                "AND edge_val.key=hirev.key "
-                "WHERE edge_val.valtype<>'unset' "
-                "AND edge_val.branch IN ({qms});".format(
-                    qms=", ".join("?" * len(branches))
-                ), (
-                    self.graph.name,
-                    unicode(self.nodeA),
-                    unicode(self.nodeB),
-                    self.idx,
-                    rev
-                ) + branches * 2
-            )
-            for row in self.gorm.cursor.fetchall():
-                try:
-                    yield int(row[0])
-                except ValueError:
-                    yield row[0]
+            seen = set()
+            for (branch, rev) in self.gorm._active_branches():
+                self.gorm.cursor.execute(
+                    "SELECT edge_val.key, edge_val.valtype='unset' FROM edge_val JOIN ("
+                    "SELECT graph, nodeA, nodeB, idx, key, branch, MAX(rev) AS rev "
+                    "FROM edge_val WHERE "
+                    "graph=? AND "
+                    "nodeA=? AND "
+                    "nodeB=? AND "
+                    "idx=? AND "
+                    "branch=? AND "
+                    "rev<=? GROUP BY graph, nodeA, nodeB, idx, key, branch) AS hirev "
+                    "ON edge_val.graph=hirev.graph "
+                    "AND edge_val.nodeA=hirev.nodeA "
+                    "AND edge_val.nodeB=hirev.nodeB "
+                    "AND edge_val.idx=hirev.idx "
+                    "AND edge_val.rev=hirev.rev;",
+                    (
+                        self.graph.name,
+                        self.nodeA,
+                        self.nodeB,
+                        self.idx,
+                        branch,
+                        rev
+                    )
+                )
+                for (key, valtype) in self.gorm.cursor.fetchall():
+                    if key not in seen and valtype != 'unset':
+                        yield key
+                    seen.add(key)
 
         def __setitem__(self, key, value):
             """Set a database record to say that key=value at the present branch
@@ -682,66 +673,45 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
             self.nodeA = nodeA
 
         def __iter__(self):
-            branches = tuple(self.gorm._active_branches())
-            rev = self.gorm.rev
-            self.gorm.cursor.execute(
-                "SELECT DISTINCT edges.nodeB FROM edges JOIN "
-                "(SELECT graph, nodeA, nodeB, idx, MAX(rev) AS rev "
-                "FROM edges WHERE "
-                "graph=? AND "
-                "nodeA=? AND "
-                "rev<=? AND "
-                "branch IN ({qms}) "
-                "GROUP BY graph, nodeA, nodeB, idx) AS hirev "
-                "ON edges.graph=hirev.graph "
-                "AND edges.nodeA=hirev.nodeA "
-                "AND edges.nodeB=hirev.nodeB "
-                "AND edges.idx=hirev.idx "
-                "AND edges.rev=hirev.rev "
-                "WHERE edges.extant={true} "
-                "AND branch IN ({qms});".format(
-                    qms=", ".join("?" * len(branches)),
-                    true=self.gorm.sql_types[self.gorm.sql_flavor]['true']
-                ), (
-                    self.graph.name,
-                    self.nodeA,
-                    rev
-                ) + branches * 2
-            )
-            for row in self.gorm.cursor.fetchall():
-                try:
-                    yield int(row[0])
-                except ValueError:
-                    yield row[0]
+            seen = set()
+            for (branch, rev) in self.gorm._active_branches():
+                self.gorm.cursor.execute(
+                    "SELECT edges.nodeB, edges.extant FROM edges JOIN ("
+                    "SELECT graph, nodeA, nodeB, branch, MAX(rev) AS rev "
+                    "FROM edges WHERE "
+                    "graph=? AND "
+                    "nodeA=? AND "
+                    "branch=? AND "
+                    "rev<=? "
+                    "GROUP BY graph, nodeA, nodeB, branch) "
+                    "AS hirev ON "
+                    "edges.graph=hirev.graph AND "
+                    "edges.nodeA=hirev.nodeA AND "
+                    "edges.nodeB=hirev.nodeB AND "
+                    "edges.branch=hirev.branch AND "
+                    "edges.rev=hirev.rev;",
+                    (
+                        self.graph.name,
+                        self.nodeA,
+                        branch,
+                        rev
+                    )
+                )
+                for row in self.gorm.cursor.fetchall():
+                    try:
+                        nodeB = int(row[0])
+                    except ValueError:
+                        nodeB = row[0]
+                    extant = bool(row[1])
+                    if nodeB not in seen and extant:
+                        yield nodeB
+                    seen.add(nodeB)
 
         def __len__(self):
-            branches = tuple(self.gorm._active_branches())
-            rev = self.gorm.rev
-            self.gorm.cursor.execute(
-                "SELECT COUNT(DISTINCT edges.nodeB) FROM edges JOIN "
-                "(SELECT graph, nodeA, nodeB, idx, MAX(rev) AS rev "
-                "FROM edges WHERE "
-                "graph=? AND "
-                "nodeA=? AND "
-                "rev<=? AND "
-                "branch IN ({qms}) "
-                "GROUP BY graph, nodeA, nodeB, idx) AS hirev "
-                "ON edges.graph=hirev.graph "
-                "AND edges.nodeA=hirev.nodeA "
-                "AND edges.nodeB=hirev.nodeB "
-                "AND edges.idx=hirev.idx "
-                "AND edges.rev=hirev.rev "
-                "WHERE edges.extant={true} "
-                "AND branch IN ({qms});".format(
-                    qms=", ".join("?" * len(branches)),
-                    true=self.gorm.sql_types[self.gorm.sql_flavor]['true']
-                ), (
-                    self.graph.name,
-                    self.nodeA,
-                    rev
-                ) + branches * 2
-            )
-            return int(self.gorm.cursor.fetchone()[0])
+            n = 0
+            for nodeB in iter(self):
+                n += 1
+            return n
 
         def __getitem__(self, nodeB):
             r = self.Edge(self.graph, self.nodeA, nodeB)
@@ -791,66 +761,45 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
             self.nodeB = nodeB
 
         def __iter__(self):
-            branches = tuple(self.gorm._active_branches())
-            rev = self.gorm.rev
-            self.gorm.cursor.execute(
-                "SELECT DISTINCT edges.nodeA FROM edges JOIN "
-                "(SELECT graph, nodeA, nodeB, idx, MAX(rev) AS rev "
-                "FROM edges WHERE "
-                "graph=? AND "
-                "nodeB=? AND "
-                "rev<=? AND "
-                "branch IN ({qms}) "
-                "GROUP BY graph, nodeA, nodeB, idx) AS hirev "
-                "ON edges.graph=hirev.graph "
-                "AND edges.nodeA=hirev.nodeA "
-                "AND edges.nodeB=hirev.nodeB "
-                "AND edges.idx=hirev.idx "
-                "AND edges.rev=hirev.rev "
-                "WHERE edges.extant={true} "
-                "AND edges.branch IN ({qms});".format(
-                    qms=", ".join("?" * len(branches)),
-                    true=self.gorm.sql_types[self.gorm.sql_flavor]['true']
-                ), (
-                    self.graph.name,
-                    self.nodeB,
-                    rev
-                ) + branches * 2
-            )
-            for row in self.gorm.cursor.fetchall():
-                try:
-                    yield int(row[0])
-                except ValueError:
-                    yield row[0]
+            seen = set()
+            for (branch, rev) in self.gorm._active_branches():
+                self.gorm.cursor.execute(
+                    "SELECT edges.nodeA, edges.extant FROM edges JOIN ("
+                    "SELECT graph, nodeA, nodeB, branch, MAX(rev) AS rev "
+                    "FROM edges WHERE "
+                    "graph=? AND "
+                    "nodeB=? AND "
+                    "branch=? AND "
+                    "rev=? "
+                    "GROUP BY graph, nodeA, nodeB, branch "
+                    ") AS hirev ON "
+                    "edges.graph=hirev.graph AND "
+                    "edges.nodeA=hirev.nodeA AND "
+                    "edges.nodeB=hirev.nodeB AND "
+                    "edges.branch=hirev.branch AND "
+                    "edges.rev=hirev.rev;",
+                    (
+                        self.graph.name,
+                        self.nodeB,
+                        branch,
+                        rev
+                    )
+                )
+                for row in self.gorm.cursor.fetchall():
+                    try:
+                        nodeA = int(row[0])
+                    except ValueError:
+                        nodeA = row[0]
+                    extant = bool(row[1])
+                    if nodeA not in seen and extant:
+                        yield nodeA
+                    seen.add(nodeA)
 
         def __len__(self):
-            branches = tuple(self.gorm._active_branches())
-            rev = self.gorm.rev
-            self.gorm.cursor.execute(
-                "SELECT COUNT(DISTINCT edges.nodeA) FROM edges JOIN "
-                "(SELECT graph, nodeA, nodeB, idx, MAX(rev) AS rev "
-                "FROM edges WHERE "
-                "graph=? AND "
-                "nodeB=? AND "
-                "rev<=? AND "
-                "branch IN ({qms}) "
-                "GROUP BY graph, nodeA, nodeB, idx) AS hirev "
-                "ON edges.graph=hirev.graph "
-                "AND edges.nodeA=hirev.nodeA "
-                "AND edges.nodeB=hirev.nodeB "
-                "AND edges.idx=hirev.idx "
-                "AND edges.rev=hirev.rev "
-                "WHERE edges.extant={true} "
-                "AND edges.branch IN ({qms});".format(
-                    qms=", ".join("?" * len(branches)),
-                    true=self.gorm.sql_types[self.gorm.sql_flavor]['true']
-                ), (
-                    self.graph.name,
-                    self.nodeB,
-                    rev
-                ) + branches * 2
-            )
-            return int(self.gorm.cursor.fetchone()[0])
+            n = 0
+            for nodeA in iter(self):
+                n += 1
+            return n
 
         def __getitem__(self, nodeA):
             r = self._getsub(nodeA)
@@ -879,66 +828,48 @@ class MultiEdges(GraphEdgeMapping):
         self.nodeB = nodeB
 
     def __iter__(self):
-        branches = tuple(self.gorm._active_branches())
+        branches = self.gorm.active_branches
         rev = self.gorm.rev
         self.gorm.cursor.execute(
-            "SELECT DISTINCT idx FROM edges JOIN "
-            "(SELECT graph, nodeA, nodeB, idx, MAX(rev) AS rev "
-            "FROM edges WHERE "
-            "graph=? AND "
-            "nodeA=? AND "
-            "nodeB=? AND "
-            "rev<=? AND "
-            "branch IN ({qms}) AND"
-            "extant={true} "
-            "GROUP BY graph, nodeA, nodeB, idx) AS hirev "
-            "ON edges.graph=hirev.graph "
-            "AND edges.nodeA=hirev.nodeA "
-            "AND edges.nodeB=hirev.nodeB "
-            "AND edges.idx=hirev.idx "
-            "AND edges.rev=hirev.rev "
-            "WHERE branch IN ({qms});".format(
-                qms=", ".join("?" * len(branches)),
-                true=self.gorm.sql_types[self.gorm.sql_flavor]['true']
-            ), (
-                self.graph.name,
-                self.nodeA,
-                self.nodeB,
-                rev
-            ) + branches * 2
-        )
-        for row in self.gorm.cursor:
-            yield int(row[0])
-
-    def __len__(self):
-        branches = tuple(self.gorm._active_branches())
-        rev = self.gorm.rev
-        self.gorm.cursor.execute(
-            "SELECT COUNT(DISTINCT idx) FROM edges JOIN "
-            "(SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
+            "SELECT edges.branch, edges.idx, edges.extant FROM edges JOIN ("
+            "SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
             "FROM edges WHERE "
             "graph=? AND "
             "nodeA=? AND "
             "nodeB=? AND "
             "rev<=? AND "
             "branch IN ({qms}) "
-            "GROUP BY graph, nodeA, nodeB, idx) AS hirev "
-            "ON edges.graph=hirev.graph "
-            "AND edges.nodeA=hirev.nodeA "
-            "AND edges.nodeB=hirev.nodeB "
-            "AND edges.rev=hirev.rev "
-            "WHERE edges.extant={true} "
-            "AND branch IN ({qms});".format(
-                qms=", ".join("?" * len(branches)),
-                true=self.gorm.sql_types[self.gorm.sql_flavor['true']]
+            "GROUP BY graph, nodeA, nodeB, idx, branch) AS hirev ON "
+            "edges.graph=hirev.graph AND "
+            "edges.nodeA=hirev.nodeA AND "
+            "edges.nodeB=hirev.nodeB AND "
+            "edges.idx=hirev.idx AND "
+            "edges.branch=hirev.branch AND "
+            "edges.rev=hirev.rev;".format(
+                qms=", ".join("?" * len(branches))
             ), (
                 self.graph.name,
                 self.nodeA,
                 self.nodeB,
                 rev
-            ) + branches * 2
+            ) + branches
         )
-        return self.gorm.cursor.fetchone()[0]
+        d = {}
+        for row in self.gorm.cursor.fetchall():
+            branch = branches.index(row[0])
+            idx = row[1]
+            extant = bool(row[2])
+            if idx not in d or d[idx][0] < branch:
+                d[idx] = (branch, extant)
+        for (idx, (branch, extant)) in d.iteritems():
+            if extant:
+                yield idx
+
+    def __len__(self):
+        n = 0
+        for idx in iter(self):
+            n += 1
+        return n
 
     def __getitem__(self, idx):
         r = self.Edge(self.graph, self.nodeA, self.nodeB, idx)

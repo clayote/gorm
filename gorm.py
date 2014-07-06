@@ -74,6 +74,13 @@ class ORM(object):
     def __exit__(self, *args):
         self.close()
 
+    def _havebranch(self, b):
+        self.cursor.execute(
+            "SELECT count(*) FROM branches WHERE branch=?;",
+            (b,)
+        )
+        return self.cursor.fetchone()[0] == 1
+
     @property
     def branch(self):
         self.cursor.execute(
@@ -83,6 +90,31 @@ class ORM(object):
 
     @branch.setter
     def branch(self, v):
+        curbranch = self.branch
+        currev = self.rev
+        if not self._havebranch(v):
+            # assumes the present revision in the parent branch has
+            # been finalized.
+            self.cursor.execute(
+                "INSERT INTO branches (branch, parent, parent_rev) "
+                "VALUES (?, ?, ?);",
+                (v, curbranch, currev)
+            )
+        # make sure I'll end up within the revision range of the
+        # destination branch
+        self.cursor.execute(
+            "SELECT parent_rev FROM branches WHERE branch=?;",
+            (v,)
+        )
+        parrev = self.cursor.fetchone()[0]
+        if currev < parrev:
+            raise ValueError(
+                "Tried to jump to branch {br}, which starts at revision {rv}. "
+                "Go to rev {rv} or later to use this branch.".format(
+                    br=v,
+                    rv=currev
+                )
+            )
         self.cursor.execute(
             "UPDATE global SET value=? WHERE key='branch';",
             (v,)
@@ -163,12 +195,9 @@ class ORM(object):
             "branch {text} NOT NULL DEFAULT 'master', "
             "rev {integer} NOT NULL DEFAULT 0, "
             "extant {boolean} NOT NULL, "
-            "nametype {text} NOT NULL DEFAULT 'str', "
             "PRIMARY KEY (graph, node, branch, rev), "
             "FOREIGN KEY(graph) REFERENCES graphs(graph), "
-            "FOREIGN KEY(branch) REFERENCES branches(branch), "
-            "CHECK(nametype IN ('str', 'int', 'unicode'))"
-            ");",
+            "FOREIGN KEY(branch) REFERENCES branches(branch));",
             "CREATE TABLE node_val ("
             "graph {text} NOT NULL, "
             "node {text} NOT NULL, "
@@ -311,78 +340,82 @@ class ORM(object):
 
     def _active_branches(self):
         branch = self.branch
+        rev = self.rev
+        yield (branch, rev)
         while branch != 'master':
-            yield branch
-            branch = self.parent(branch)
-        yield 'master'
+            self.cursor.execute(
+                "SELECT parent, parent_rev FROM branches WHERE branch=?;",
+                (branch,)
+            )
+            (branch, rev) = self.cursor.fetchone()
+            yield (branch, rev)
 
     def _iternodes(self, graph):
-        rev = self.rev
-        branches = tuple(self._active_branches())
-        self.cursor.execute(
-            "SELECT nodes.node FROM nodes "
-            "JOIN (SELECT graph, node, rev "
-            "FROM nodes WHERE graph=? AND rev<=? AND branch IN ({qms}) "
-            "GROUP BY graph, node) AS hirev ON "
-            "nodes.graph=hirev.graph AND "
-            "nodes.node=hirev.node "
-            "AND nodes.rev=hirev.rev "
-            "AND branch IN ({qms}) "
-            "WHERE extant={true};".format(
-                qms=", ".join("?" * len(branches)),
-                true=self.sql_types[self.sql_flavor]['true']
-            ),
-            (unicode(graph), rev) + branches * 2
-        )
-        for row in self.cursor.fetchall():
-            try:
-                yield int(row[0])
-            except ValueError:
-                yield row[0]
+        seen = set()
+        for (branch, rev) in self._active_branches():
+            self.cursor.execute(
+                "SELECT nodes.node, nodes.extant "
+                "FROM nodes JOIN ("
+                "SELECT graph, node, branch, MAX(rev) AS rev FROM nodes "
+                "WHERE graph=? "
+                "AND branch=? "
+                "AND rev<=? "
+                "GROUP BY graph, node, branch) AS hirev "
+                "ON nodes.graph=hirev.graph "
+                "AND nodes.node=hirev.node "
+                "AND nodes.branch=hirev.branch "
+                "AND nodes.rev=hirev.rev;",
+                (
+                    graph,
+                    branch,
+                    rev
+                )
+            )
+            data = self.cursor.fetchall()
+            for row in data:
+                try:
+                    node = int(row[0])
+                except ValueError:
+                    node = row[1]
+                if node in seen:
+                    continue
+                seen.add(node)
+                extant = bool(row[1])
+                if extant:
+                    yield node
 
     def _countnodes(self, graph):
-        rev = self.rev
-        branches = tuple(self._active_branches())
-        self.cursor.execute(
-            "SELECT COUNT(nodes.node) FROM nodes "
-            "JOIN (SELECT graph, node, rev "
-            "FROM nodes WHERE graph=? AND rev<=? AND branch IN ({qms}) "
-            "GROUP BY graph, node) AS hirev ON "
-            "nodes.graph=hirev.graph AND "
-            "nodes.node=hirev.node AND "
-            "nodes.rev=hirev.rev AND "
-            "branch IN ({qms}) "
-            "WHERE extant={true};".format(
-                qms=", ".join("?" * len(branches)),
-                true=self.sql_types[self.sql_flavor]['true']
-            ),
-            (unicode(graph), rev) + branches * 2
-        )
-        return int(self.cursor.fetchone()[0])
+        n = 0
+        for node in self._iternodes(graph):
+            n += 1
+        return n
 
     def _node_exists(self, graph, node):
-        branches = tuple(self._active_branches())
-        rev = self.rev
-        self.cursor.execute(
-            "SELECT extant FROM nodes JOIN ("
-            "SELECT graph, node, MAX(rev) AS rev FROM nodes "
-            "WHERE graph=? "
-            "AND node=? "
-            "AND rev<=? "
-            "AND branch IN ({qms})) AS hirev "
-            "ON nodes.graph=hirev.graph "
-            "AND nodes.node=hirev.node "
-            "AND nodes.rev=hirev.rev "
-            "AND branch IN ({qms});".format(
-                qms=", ".join("?" * len(branches))
-            ), (
-                unicode(graph),
-                unicode(node),
-                rev
-            ) + branches * 2
-        )
-        row = self.cursor.fetchone()
-        try:
-            return bool(row[0])
-        except TypeError:
-            return False
+        for (branch, rev) in self._active_branches():
+            self.cursor.execute(
+                "SELECT nodes.extant FROM nodes JOIN ("
+                "SELECT graph, node, branch, MAX(rev) AS rev FROM nodes "
+                "WHERE graph=? "
+                "AND node=? "
+                "AND branch=? "
+                "AND rev<=? "
+                "GROUP BY graph, node, branch) AS hirev "
+                "ON nodes.graph=hirev.graph "
+                "AND nodes.node=hirev.node "
+                "AND nodes.branch=hirev.branch "
+                "AND nodes.rev=hirev.rev;",
+                (
+                    graph,
+                    node,
+                    branch,
+                    rev
+                )
+            )
+            data = self.cursor.fetchall()
+            if len(data) == 0:
+                continue
+            elif len(data) > 1:
+                raise ValueError("Silly data in nodes table")
+            else:
+                return bool(data.pop()[0])
+        return False

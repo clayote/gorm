@@ -7,3 +7,43 @@ Object relational mapper for graphs with in-built revision control.
 gorm serves its own special variants on the networkx graph classes: Graph, DiGraph, MultiGraph, and MultiDiGraph. Every change to them is stored in an SQL database.
 
 This means you can keep multiple versions of one set of graphs and switch between them without the need to save, load, or run git-checkout. Just point the ORM at the correct branch and revision, and all of the graphs in the program will change. All the different branches and revisions remain in the database to be brought back when needed.
+
+
+usage
+=====
+>>> from gorm import ORM
+>>> from sqlite3 import connect  # will soon support other DBAPI2.0 compatible connections
+>>> orm = ORM(connect('test.db'))
+>>> orm.initdb()  # only necessary the first time you use a particular database
+>>> g = orm.new_graph('test')  # also new_digraph, new_multigraph, new_multidigraph
+>>> g.add_nodes_from(['spam', 'eggs', 'ham'])
+>>> g.add_edge('spam', 'eggs')
+>>> g.edge  # strings become unicode because that's the way sqlite3 rolls
+{u'eggs': {u'ham': {}, u'spam': {}}, u'ham': {u'eggs': {}}, u'spam': {u'eggs': {}}}
+>>> del g
+>>> orm.close()  # commits changes; if you want to commit changes WITHOUT closing orm, use orm.connection.commit()
+>>> del orm
+>>> orm = ORM(connect('test.db'))
+>>> g = orm.get_graph('test')  # returns whatever graph type you stored by that name
+>>> g.edge  # Integer keys are permitted. Strings that contain only numerical characters are not.
+{u'eggs': {u'ham': {}, u'spam': {}}, u'ham': {u'eggs': {}}, u'spam': {u'eggs': {}}}
+>>> import networkx as nx
+>>> red = nx.random_lobster(10,0.9,0.9)
+>>> blue = orm.new_graph('red', red)  # initialize with data from the given graph
+>>> red.edge == blue.edge
+True
+>>> orm.rev = 1
+>>> blue.add_edge(17, 15)
+>>> red.edge == blue.edge
+False
+>>> orm.rev = 0  # undoing what I did when rev=1
+>>> red.edge == blue.edge
+True
+>>> orm.rev = 0
+>>> orm.branch = 'test'    # navigating to a branch for the first time creates that branch,
+>>> orm.rev = 1            # putting the start of the branch at the present revision
+>>> red.edge == blue.edge
+True
+>>> orm.branch == 'master'
+>>> red.edge == blue.edge
+False
