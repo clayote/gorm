@@ -45,7 +45,7 @@ True
 >>> orm.rev = 1            # putting the start of the branch at the present revision
 >>> red.edge == blue.edge
 True
->>> orm.branch == 'master'
+>>> orm.branch = 'master'
 >>> red.edge == blue.edge
 False
 ```
