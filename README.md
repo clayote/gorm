@@ -11,6 +11,7 @@ This means you can keep multiple versions of one set of graphs and switch betwee
 
 usage
 =====
+```
 >>> from gorm import ORM
 >>> from sqlite3 import connect  # will soon support other DBAPI2.0 compatible connections
 >>> orm = ORM(connect('test.db'))
@@ -47,3 +48,4 @@ True
 >>> orm.branch == 'master'
 >>> red.edge == blue.edge
 False
+```
