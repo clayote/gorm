@@ -1,3 +1,5 @@
+# This file is part of gorm, an object relational mapper for versioned graphs.
+# Copyright (C) 2014 Zachary Spector.
 from pickle import Pickler, Unpickler
 from json import dumps as jsonned
 from json import loads as unjsonned
@@ -11,6 +13,11 @@ from graph import (
 
 
 def pickled(v):
+    """Return a string representation of ``v`` pickled.
+
+    Uses pickle protocol version 0.
+
+    """
     io = StringIO()
     pck = Pickler(io)
     pck.dump(v)
@@ -20,6 +27,12 @@ def pickled(v):
 
 
 def unpickled(s):
+    """Take a pickled string representation of an object and return the
+    object.
+
+    Uses pickle protocol version 0.
+
+    """
     io = StringIO(s)
     upck = Unpickler(io)
     r = upck.load()
@@ -28,6 +41,7 @@ def unpickled(s):
 
 
 class ORM(object):
+    """Instantiate this with a database connector to use gorm."""
     str2type = {
         'bool': bool,
         'int': int,
@@ -35,6 +49,7 @@ class ORM(object):
         'str': str,
         'unicode': unicode
     }
+    """Map string names of primitive types to the types themselves."""
     type2str = {
         bool: 'bool',
         int: 'int',
@@ -42,6 +57,7 @@ class ORM(object):
         str: 'str',
         unicode: 'unicode'
     }
+    """Map types to their string representations."""
     sql_types = {
         'sqlite': {
             'text': 'TEXT',
@@ -51,30 +67,31 @@ class ORM(object):
             'false': '0'
         }
     }
+    """Important data types and values represented for different SQL flavors."""
     def __init__(
             self,
-            connector=None,
+            connector,
             sql_flavor='sqlite',
             pickling=False
     ):
+        """Store connector and flags, and open a cursor"""
         self.pickling = pickling
         if sql_flavor not in self.sql_types:
             raise ValueError("Unknown SQL flavor")
         self.sql_flavor = sql_flavor
-        if connector is None:
-            from sqlite3 import connect
-            self.connection = connect(':memory:')
-        else:
-            self.connection = connector
+        self.connection = connector
         self.cursor = self.connection.cursor()
 
     def __enter__(self):
+        """Enable the use of the ``with`` keyword"""
         return self
 
     def __exit__(self, *args):
+        """Alias for ``close``"""
         self.close()
 
     def _havebranch(self, b):
+        """Private use. Checks that the branch is known about."""
         self.cursor.execute(
             "SELECT count(*) FROM branches WHERE branch=?;",
             (b,)
@@ -148,11 +165,21 @@ class ORM(object):
         )
 
     def close(self):
+        """Commit the transaction and close the cursor.
+
+        Don't close the connection--I don't know what else is to be
+        done with it.
+
+        """
         # maybe these should be in the opposite order?
         self.connection.commit()
         self.cursor.close()
 
     def initdb(self):
+        """Create the database schema that I use, and put the (branch, rev)
+        cursor at ('master', 0).
+
+        """
         tabdecls = [
             "CREATE TABLE global ("
             "key {text} NOT NULL, "
@@ -255,13 +282,6 @@ class ORM(object):
             globs
         )
 
-    def parent(self, branch):
-        self.cursor.execute(
-            "SELECT branch, parent FROM branches WHERE branch=?;",
-            (branch,)
-        )
-        return self.cursor.fetchone()[1]
-
     def cast(self, value, typestr):
         """Return ``value`` cast into the type indicated by ``typestr``"""
         if typestr == 'pickle':
@@ -300,22 +320,43 @@ class ORM(object):
         )
 
     def new_graph(self, name, data=None, **attr):
+        """Return a new instance of type Graph, initialized with the given
+        data if provided.
+
+        """
         self._init_graph(name, 'Graph')
         return Graph(self, name, data, **attr)
 
     def new_digraph(self, name, data=None, **attr):
+        """Return a new instance of type DiGraph, initialized with the given
+        data if provided.
+
+        """
         self._init_graph(name, 'DiGraph')
         return DiGraph(self, name, data, **attr)
 
     def new_multigraph(self, name, data=None, **attr):
+        """Return a new instance of type MultiGraph, initialized with the given
+        data if provided.
+
+        """
         self._init_graph(name, 'MultiGraph')
         return MultiGraph(self, name, data, **attr)
 
     def new_multidigraph(self, name, data=None, **attr):
+        """Return a new instance of type MultiDiGraph, initialized with the given
+        data if provided.
+
+        """
         self._init_graph(name, 'MultiDiGraph')
         return MultiDiGraph(self, name, data, **attr)
 
     def get_graph(self, name):
+        """Return a graph previously created with ``new_graph``,
+        ``new_digraph``, ``new_multigraph``, or
+        ``new_multidigraph``
+
+        """
         self.cursor.execute("SELECT type FROM graphs WHERE graph=?;", (name,))
         try:
             (type_s,) = self.cursor.fetchone()
@@ -329,6 +370,9 @@ class ORM(object):
         }[type_s](self, name)
 
     def del_graph(self, name):
+        """Remove all traces of a graph's existence from the database"""
+        # make sure the graph exists before deleting anything
+        self.get_graph(name)
         for statement in [
                 "DELETE FROM edge_val WHERE graph=?;",
                 "DELETE FROM edges WHERE graph=?;",
@@ -339,6 +383,11 @@ class ORM(object):
             self.cursor.execute(statement, (name,))
 
     def _active_branches(self):
+        """Private use. Iterate over (branch, rev) pairs, where the branch is
+        a descendant of the previous (ending at 'master'), and the rev
+        is the latest revision in the branch that matters.
+
+        """
         branch = self.branch
         rev = self.rev
         yield (branch, rev)
@@ -351,6 +400,7 @@ class ORM(object):
             yield (branch, rev)
 
     def _iternodes(self, graph):
+        """Iterate over all nodes that presently exist in the graph"""
         seen = set()
         for (branch, rev) in self._active_branches():
             self.cursor.execute(
@@ -385,12 +435,14 @@ class ORM(object):
                     yield node
 
     def _countnodes(self, graph):
+        """How many nodes presently exist in the graph?"""
         n = 0
         for node in self._iternodes(graph):
             n += 1
         return n
 
     def _node_exists(self, graph, node):
+        """Does this node presently exist in this graph?"""
         for (branch, rev) in self._active_branches():
             self.cursor.execute(
                 "SELECT nodes.extant FROM nodes JOIN ("

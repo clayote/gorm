@@ -11,6 +11,10 @@ class GraphMapping(MutableMapping):
         self.gorm = graph.gorm
 
     def __getitem__(self, key):
+        """If key is 'graph', return myself as a dict, else get the present
+        value of the key and return that
+
+        """
         if key == 'graph':
             return dict(self)
         for (branch, rev) in self.gorm._active_branches():
@@ -90,6 +94,7 @@ class GraphMapping(MutableMapping):
         )
 
     def __iter__(self):
+        """Iterate over the keys that aren't presently of valtype 'unset'"""
         seen = set()
         for (branch, rev) in self.gorm._active_branches():
             self.gorm.cursor.execute(
@@ -123,6 +128,7 @@ class GraphMapping(MutableMapping):
                     yield key
 
     def __len__(self):
+        """Number of non-'unset' keys"""
         n = 0
         for k in iter(self):
             n += 1
@@ -134,6 +140,7 @@ class GraphMapping(MutableMapping):
             del self[k]
 
     def __repr__(self):
+        """Looks like a dictionary."""
         return repr(dict(self))
 
 
@@ -169,12 +176,24 @@ class GraphNodeMapping(GraphMapping):
         n.clear()
 
     def __iter__(self):
+        """Iterate over the names of the nodes"""
         return self.gorm._iternodes(self.graph.name)
 
     def __len__(self):
+        """How many nodes exist right now?"""
         return self.gorm._countnodes(self.graph.name)
 
     def __eq__(self, other):
+        """Compare values cast into dicts.
+
+        As I serve the custom Node class, rather than dicts like
+        networkx normally would, the normal comparison operation would
+        not let you compare my nodes with regular networkx
+        nodes-that-are-dicts. So I cast my nodes into dicts for this
+        purpose, and cast the other argument's nodes the same way, in
+        case it is a gorm graph.
+
+        """
         if not hasattr(other, 'keys'):
             return False
         if set(self.keys()) != set(other.keys()):
@@ -228,12 +247,14 @@ class GraphNodeMapping(GraphMapping):
             )
 
         def __init__(self, graph, node):
+            """Store name and graph"""
             self.graph = graph
             self.gorm = graph.gorm
             self.node = node
             self.name = self.node
 
         def __getitem__(self, key):
+            """Get the value of the key at the present branch and rev"""
             for (branch, rev) in self.gorm._active_branches():
                 self.gorm.cursor.execute(
                     "SELECT node_val.value, node_val.valtype FROM node_val JOIN ("
@@ -271,6 +292,10 @@ class GraphNodeMapping(GraphMapping):
             raise KeyError("key never set")
 
         def __iter__(self):
+            """Iterate over those keys that do not have valtype='unset' at the
+            moment
+
+            """
             seen = set()
             for (branch, rev) in self.gorm._active_branches():
                 self.gorm.cursor.execute(
@@ -304,7 +329,10 @@ class GraphNodeMapping(GraphMapping):
                     seen.add(key)
 
         def __setitem__(self, key, value):
-            """Set key=value at the present branch and revision. Overwrite if necessary."""
+            """Set key=value at the present branch and rev. Overwrite if
+            necessary.
+
+            """
             branch = self.gorm.branch
             rev = self.gorm.rev
             (v, valtyp) = self.gorm.stringify(value)
@@ -334,6 +362,10 @@ class GraphNodeMapping(GraphMapping):
             )
 
         def __delitem__(self, key):
+            """Set the key's valtype to 'unset', indicating it should be ignored
+            now and in future revs
+
+            """
             branch = self.gorm.branch
             rev = self.gorm.rev
             self.gorm.cursor.execute(
@@ -359,30 +391,46 @@ class GraphEdgeMapping(GraphMapping):
 
     """
     def __init__(self, graph):
+        """Store the graph"""
         self.graph = graph
         self.gorm = graph.gorm
 
     def __iter__(self):
+        """Iterate over the nodes that exist at the moment"""
         return self.gorm._iternodes(self.graph.name)
 
     def __len__(self):
+        """How many nodes do I have at the moment?"""
         return self.gorm._countnodes(self.graph.name)
 
     def __eq__(self, other):
+        """Compare dictified versions of the edge mappings within me.
+
+        As I serve custom Predecessor or Successor classes, which
+        themselves serve the custom Edge class, I wouldn't normally be
+        comparable to a networkx adjacency dictionary. Converting
+        myself and the other argument to dicts allows the comparison
+        to work anyway.
+
+        """
         if not hasattr(other, 'keys'):
             return False
         myks = set(self.keys())
         if myks != set(other.keys()):
             return False
-        # not really sure why, but if I iterate over myself rather
-        # than myks I don't really iterate over all the keys
         for k in myks:
             if dict(self[k]) != dict(other[k]):
                 return False
         return True
 
     class Edge(GraphMapping):
+        """Mapping for edge attributes"""
         def __init__(self, graph, nodeA, nodeB, idx=0):
+            """Store the graph, the names of the nodes, and the index.
+
+            For non-multigraphs the index is always 0.
+
+            """
             self.graph = graph
             self.gorm = graph.gorm
             try:
@@ -476,6 +524,10 @@ class GraphEdgeMapping(GraphMapping):
             )
 
         def __getitem__(self, key):
+            """Return the present value of the key, or raise KeyError if it's
+            unset
+
+            """
             for (branch, rev) in self.gorm._active_branches():
                 self.gorm.cursor.execute(
                     "SELECT edge_val.value, edge_val.valtype FROM edge_val JOIN ("
@@ -519,6 +571,7 @@ class GraphEdgeMapping(GraphMapping):
             raise KeyError('key never set')
 
         def __iter__(self):
+            """Yield those keys that have a real value, not of valtype 'unset'"""
             seen = set()
             for (branch, rev) in self.gorm._active_branches():
                 self.gorm.cursor.execute(
@@ -603,6 +656,10 @@ class GraphEdgeMapping(GraphMapping):
             )
 
         def __delitem__(self, key):
+            """Set the key's valtype to 'unset', such that it is not yielded by
+            ``__iter__``
+
+            """
             branch = self.gorm.branch
             rev = self.gorm.rev
             self.gorm.cursor.execute(
@@ -652,27 +709,40 @@ class GraphEdgeMapping(GraphMapping):
 
 
 class GraphSuccessorsMapping(GraphEdgeMapping):
+    """Mapping for Successors (itself a MutableMapping)"""
     def __getitem__(self, nodeA):
+        """If the node exists, return a Successors instance for it"""
         if not self.gorm._node_exists(self.graph.name, nodeA):
             raise KeyError("No such node")
         return self.Successors(self, nodeA)
 
     def __setitem__(self, nodeA, val):
+        """Wipe out any edges presently emanating from nodeA and replace them
+        with those described by val
+
+        """
         sucs = self.Successors(self, nodeA)
         sucs.clear()
         sucs.update(val)
 
     def __delitem__(self, nodeA):
+        """Wipe out edges emanating from nodeA"""
         self.Successors(self, nodeA).clear()
 
     class Successors(GraphEdgeMapping):
+        def _getsub(self, nodeB):
+            """Return what I map to"""
+            return self.Edge(self.graph, self.nodeA, nodeB)
+
         def __init__(self, container, nodeA):
+            """Store container and node"""
             self.container = container
             self.graph = container.graph
             self.gorm = self.graph.gorm
             self.nodeA = nodeA
 
         def __iter__(self):
+            """Iterate over node IDs that have an edge with my nodeA"""
             seen = set()
             for (branch, rev) in self.gorm._active_branches():
                 self.gorm.cursor.execute(
@@ -708,59 +778,81 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
                     seen.add(nodeB)
 
         def __len__(self):
+            """How many nodes touch an edge shared with my nodeA?"""
             n = 0
             for nodeB in iter(self):
                 n += 1
             return n
 
         def __getitem__(self, nodeB):
-            r = self.Edge(self.graph, self.nodeA, nodeB)
+            """Get the edge between my nodeA and the given node"""
+            r = self._getsub(nodeB)
             if not r.exists:
                 raise KeyError("Edge doesn't exist")
             return r
 
         def __setitem__(self, nodeB, value):
+            """Set the edge between my nodeA and the given nodeB to the given
+            value, a mapping.
+
+            """
             e = self.Edge(self.graph, self.nodeA, nodeB)
             e.clear()
             e.exists = True
             e.update(value)
 
         def __delitem__(self, nodeB):
+            """Remove the edge between my nodeA and the given nodeB"""
             e = self.Edge(self.graph, self.nodeA, nodeB)
             if not e.exists:
                 raise KeyError("No such edge")
             e.clear()
 
         def clear(self):
+            """Delete every edge with origin at my nodeA"""
             for nodeB in self:
                 del self[nodeB]
 
 
 class DiGraphPredecessorsMapping(GraphEdgeMapping):
+    """Mapping for Predecessors instances, which map to Edges that end at
+    the nodeB provided to this
+
+    """
     def __getitem__(self, nodeB):
+        """Return a Predecessors instance for edges ending at the given
+        node
+
+        """
         if not self.gorm._node_exists(self.graph.name, nodeB):
             raise KeyError("No such node")
         return self.Predecessors(self, nodeB)
 
     def __setitem__(self, nodeB, val):
+        """Interpret ``val`` as a mapping of edges that end at ``nodeB``"""
         preds = self.Predecessors(self, nodeB)
         preds.clear()
         preds.update(val)
 
     def __delitem__(self, nodeB):
+        """Delete all edges ending at ``nodeB``"""
         self.Predecessors(self, nodeB).clear()
 
     class Predecessors(GraphEdgeMapping):
+        """Mapping of Edges that end at a particular node"""
         def _getsub(self, nodeA):
+            """Get the edge ending at my nodeB, starting at the given node"""
             return self.Edge(self.graph, nodeA, self.nodeB)
 
         def __init__(self, container, nodeB):
+            """Store container and node ID"""
             self.container = container
             self.graph = container.graph
             self.gorm = self.graph.gorm
             self.nodeB = nodeB
 
         def __iter__(self):
+            """Iterate over the edges that exist at the present (branch, rev)"""
             seen = set()
             for (branch, rev) in self.gorm._active_branches():
                 self.gorm.cursor.execute(
@@ -796,24 +888,31 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                     seen.add(nodeA)
 
         def __len__(self):
+            """How many edges exist at this rev of this branch?"""
             n = 0
             for nodeA in iter(self):
                 n += 1
             return n
 
         def __getitem__(self, nodeA):
+            """Get the edge from the given node to mine"""
             r = self._getsub(nodeA)
             if not r.exists:
                 raise KeyError("Edge doesn't exist")
             return r
 
         def __setitem__(self, nodeA, value):
+            """Use ``value`` as a mapping of edge attributes, set an edge from the
+            given node to mine.
+
+            """
             e = self._getsub(nodeA)
             e.clear()
             e.exists = True
             e.update(value)
 
         def __delitem__(self, nodeA):
+            """Unset the existence of the edge from the given node to mine"""
             e = self._getsub(nodeA)
             if not e.exists:
                 raise KeyError("No such edge")
@@ -821,13 +920,16 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
 
 
 class MultiEdges(GraphEdgeMapping):
+    """Mapping of Edges between two nodes"""
     def __init__(self, graph, nodeA, nodeB):
+        """Store graph and node IDs"""
         self.graph = graph
         self.gorm = graph.gorm
         self.nodeA = nodeA
         self.nodeB = nodeB
 
     def __iter__(self):
+        """Iterate over the indices of existing edges in ascending order"""
         branches = self.gorm.active_branches
         rev = self.gorm.rev
         self.gorm.cursor.execute(
@@ -861,73 +963,103 @@ class MultiEdges(GraphEdgeMapping):
             extant = bool(row[2])
             if idx not in d or d[idx][0] < branch:
                 d[idx] = (branch, extant)
-        for (idx, (branch, extant)) in d.iteritems():
-            if extant:
-                yield idx
+        for idx in sorted(d.values()):
+            for (branch, extant) in d[idx]:
+                if extant:
+                    yield idx
 
     def __len__(self):
+        """How many edges currently connect my two nodes?"""
         n = 0
         for idx in iter(self):
             n += 1
         return n
 
     def __getitem__(self, idx):
+        """Get an Edge with a particular index, if it exists at the present
+        (branch, rev)
+
+        """
         r = self.Edge(self.graph, self.nodeA, self.nodeB, idx)
         if not r.exists:
             raise KeyError("No edge at that index")
         return r
 
     def __setitem__(self, idx, val):
+        """Create an Edge at a given index from a mapping. Delete the existing
+        Edge first, if necessary.
+
+        """
         e = self.Edge(self.graph, self.nodeA, self.nodeB, idx)
         e.clear()
         e.exists = True
         e.update(val)
 
     def __delitem__(self, idx):
+        """Delete the edge at a particular index"""
         e = self.Edge(self.graph, self.nodeA, self.nodeB, idx)
         if not e.exists:
             raise KeyError("No edge at that index")
         e.clear()
 
     def clear(self):
+        """Delete all edges between these nodes"""
         for idx in self:
             del self[idx]
 
 
 class MultiGraphSuccessorsMapping(GraphSuccessorsMapping):
+    """Mapping of Successors that map to MultiEdges"""
     def __getitem__(self, nodeA):
+        """If the node exists, return its Successors"""
         if not self.gorm._node_exists(self.graph.name, nodeA):
             raise KeyError("No such node")
         return self.Successors(self, nodeA)
 
     def __setitem__(self, nodeA, val):
+        """Interpret ``val`` as a mapping of successors, and turn it into a
+        proper Successors object for storage
+
+        """
         r = self.Successors(self, nodeA)
         r.clear()
         r.update(val)
 
     def __delitem__(self, nodeA):
+        """Disconnect this node from everything"""
         self.Successors(self, nodeA).clear()
 
     class Successors(GraphSuccessorsMapping.Successors):
-        def _edges(self, nodeB):
+        """Edges succeeding a given node in a multigraph"""
+        def _getsub(self, nodeB):
+            """Get MultiEdges"""
             return MultiEdges(self.graph, self.nodeA, nodeB)
 
         def __getitem__(self, nodeB):
-            r = self._edges(nodeB)
+            """If ``nodeB`` exists, return the edges to it"""
+            r = self._getsub(nodeB)
             if len(r) == 0:
                 raise KeyError("No edge between these nodes")
             return r
 
         def __setitem__(self, nodeB, val):
-            self._edges(nodeB).update(val)
+            """Interpret ``val`` as a dictionary of edge attributes for edges
+            between my ``nodeA`` and the given ``nodeB``
+
+            """
+            self._getsub(nodeB).update(val)
 
         def __delitem__(self, nodeB):
-            self._edges(nodeB).clear()
+            """Delete all edges between my ``nodeA`` and the given ``nodeB``"""
+            self._getsub(nodeB).clear()
 
 
 class MultiDiGraphPredecessorsMapping(DiGraphPredecessorsMapping):
+    """Version of DiGraphPredecessorsMapping for multigraphs"""
     class Predecessors(DiGraphPredecessorsMapping.Predecessors):
+        """Predecessor edges from a given node"""
         def _getsub(self, nodeA):
+            """Get MultiEdges"""
             return MultiEdges(self.graph, nodeA, self.nodeB)
 
 
@@ -945,6 +1077,12 @@ class Graph(networkx.Graph):
         self._name = name
         self.gorm = gorm
         self.graph = GraphMapping(self)
+        self.keys = self.graph.keys
+        self.iterkeys = self.graph.iterkeys
+        self.values = self.graph.values
+        self.itervalues = self.graph.itervalues
+        self.items = self.graph.items
+        self.iteritems = self.graph.iteritems
         self.node = GraphNodeMapping(self)
         self.adj = GraphSuccessorsMapping(self)
         if data is not None:
@@ -972,21 +1110,6 @@ class Graph(networkx.Graph):
         self.node.clear()
         self.graph.clear()
 
-    def keys(self):
-        return self.graph.keys
-
-    def iterkeys(self):
-        return self.graph.iterkeys()
-
-    def itervalues(self):
-        return self.graph.itervalues()
-
-    def iteritems(self):
-        return self.graph.iteritems()
-
-    def values(self):
-        return self.graph.values()
-
 
 class DiGraph(networkx.DiGraph):
     def __init__(self, gorm, name, data=None, **attr):
@@ -1003,6 +1126,12 @@ class DiGraph(networkx.DiGraph):
         self.gorm = gorm
         self._name = name
         self.graph = GraphMapping(self)
+        self.keys = self.graph.keys
+        self.iterkeys = self.graph.iterkeys
+        self.values = self.graph.values
+        self.itervalues = self.graph.itervalues
+        self.items = self.graph.items
+        self.iteritems = self.graph.iteritems
         self.node = GraphNodeMapping(self)
         self.adj = GraphSuccessorsMapping(self)
         self.pred = DiGraphPredecessorsMapping(self)
@@ -1021,12 +1150,22 @@ class DiGraph(networkx.DiGraph):
         raise TypeError("gorm graphs can't be renamed")
 
     def remove_edge(self, u, v):
+        """Version of remove_edge that's much like normal networkx but only
+        deletes once, since the database doesn't keep separate adj and
+        succ mappings
+
+        """
         try:
             del self.succ[u][v]
         except KeyError:
             raise NetworkXError("The edge {}-{} is not in the graph.".format(u, v))
 
     def remove_edges_from(self, ebunch):
+        """Version of remove_edges_from that's much like normal networkx but only
+        deletes once, since the database doesn't keep separate adj and
+        succ mappings
+
+        """
         for e in ebunch:
             (u, v) = e[:2]
             if u in self.succ and v in self.succ[u]:
@@ -1037,6 +1176,12 @@ class MultiGraph(networkx.MultiGraph):
     def __init__(self, gorm, name, data=None, **attr):
         self._name = name
         self.graph = GraphMapping(gorm, name)
+        self.keys = self.graph.keys
+        self.iterkeys = self.graph.iterkeys
+        self.values = self.graph.values
+        self.itervalues = self.graph.itervalues
+        self.items = self.graph.items
+        self.iteritems = self.graph.iteritems
         self.node = GraphNodeMapping(gorm, name)
         self.adj = MultiGraphSuccessorsMapping(gorm, name)
         if data is not None:
@@ -1057,6 +1202,12 @@ class MultiDiGraph(networkx.MultiDiGraph):
     def __init__(self, gorm, name, data=None, **attr):
         self._name = name
         self.graph = GraphMapping(gorm, name)
+        self.keys = self.graph.keys
+        self.iterkeys = self.graph.iterkeys
+        self.values = self.graph.values
+        self.itervalues = self.graph.itervalues
+        self.items = self.graph.items
+        self.iteritems = self.graph.iteritems
         self.node = GraphNodeMapping(gorm, name)
         self.adj = MultiGraphSuccessorsMapping(gorm, name)
         self.pred = MultiDiGraphPredecessorsMapping(gorm, name)
@@ -1075,6 +1226,11 @@ class MultiDiGraph(networkx.MultiDiGraph):
         raise TypeError("gorm graphs can't be renamed")
 
     def remove_edge(self, u, v, key=None):
+        """Version of remove_edge that's much like normal networkx but only
+        deletes once, since the database doesn't keep separate adj and
+        succ mappings
+
+        """
         try:
             d = self.adj[u][v]
         except KeyError:
@@ -1092,8 +1248,12 @@ class MultiDiGraph(networkx.MultiDiGraph):
             del self.succ[u][v]
 
     def remove_edges_from(self, ebunch):
+        """Version of remove_edges_from that's much like normal networkx but only
+        deletes once, since the database doesn't keep separate adj and
+        succ mappings
+
+        """
         for e in ebunch:
-            try:
-                self.remove_edge(*e[:3])
-            except NetworkXError:
-                pass
+            (u, v) = e[:2]
+            if u in self.succ and v in self.succ[u]:
+                del self.succ[u][v]
