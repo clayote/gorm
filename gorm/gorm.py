@@ -117,6 +117,8 @@ class ORM(object):
                 "VALUES (?, ?, ?);",
                 (v, curbranch, currev)
             )
+        if v == 'master':
+            return
         # make sure I'll end up within the revision range of the
         # destination branch
         self.cursor.execute(
