@@ -426,7 +426,7 @@ class ORM(object):
                 try:
                     node = int(row[0])
                 except ValueError:
-                    node = row[1]
+                    node = row[0]
                 if node in seen:
                     continue
                 seen.add(node)
