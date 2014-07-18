@@ -72,7 +72,9 @@ class ORM(object):
             self,
             connector,
             sql_flavor='sqlite',
-            pickling=False
+            pickling=False,
+            obranch=None,
+            orev=None
     ):
         """Store connector and flags, and open a cursor"""
         self.pickling = pickling
@@ -81,6 +83,8 @@ class ORM(object):
         self.sql_flavor = sql_flavor
         self.connection = connector
         self.cursor = self.connection.cursor()
+        self._obranch = obranch
+        self._orev = orev
 
     def __enter__(self):
         """Enable the use of the ``with`` keyword"""
@@ -100,6 +104,8 @@ class ORM(object):
 
     @property
     def branch(self):
+        if self._obranch is not None:
+            return self._obranch
         self.cursor.execute(
             "SELECT value FROM global WHERE key='branch';"
         )
@@ -141,6 +147,8 @@ class ORM(object):
 
     @property
     def rev(self):
+        if self._orev is not None:
+            return self._orev
         self.cursor.execute(
             "SELECT value FROM global WHERE key='rev';"
         )
@@ -150,17 +158,18 @@ class ORM(object):
     def rev(self, v):
         # first make sure the cursor is not before the start of this branch
         branch = self.branch
-        self.cursor.execute(
-            "SELECT parent, parent_rev FROM branches WHERE branch=?;",
-            (branch,)
-        )
-        (parent, parent_rev) = self.cursor.fetchone()
-        if v < int(parent_rev):
-            raise ValueError(
-                "The revision number {revn} "
-                "occurs before the start of "
-                "the branch {brnch}".format(revn=v, brnch=branch)
+        if branch != 'master':
+            self.cursor.execute(
+                "SELECT parent, parent_rev FROM branches WHERE branch=?;",
+                (branch,)
             )
+            (parent, parent_rev) = self.cursor.fetchone()
+            if v < int(parent_rev):
+                raise ValueError(
+                    "The revision number {revn} "
+                    "occurs before the start of "
+                    "the branch {brnch}".format(revn=v, brnch=branch)
+                )
         self.cursor.execute(
             "UPDATE global SET value=? WHERE key='rev';",
             (v,)
