@@ -1080,6 +1080,9 @@ class Graph(networkx.Graph):
         self.keys = self.graph.keys
         self.values = self.graph.values
         self.items = self.graph.items
+        for py2att in ('iterkeys', 'itervalues', 'iteritems'):
+            if hasattr(self.graph, py2att):
+                setattr(self, py2att, getattr(self.graph, py2att))
         self.node = GraphNodeMapping(self)
         self.adj = GraphSuccessorsMapping(self)
         if data is not None:
@@ -1124,11 +1127,11 @@ class DiGraph(networkx.DiGraph):
         self._name = name
         self.graph = GraphMapping(self)
         self.keys = self.graph.keys
-        self.iterkeys = self.graph.iterkeys
         self.values = self.graph.values
-        self.itervalues = self.graph.itervalues
         self.items = self.graph.items
-        self.iteritems = self.graph.iteritems
+        for py2att in ('iterkeys', 'itervalues', 'iteritems'):
+            if hasattr(self.graph, py2att):
+                setattr(self, py2att, getattr(self.graph, py2att))
         self.node = GraphNodeMapping(self)
         self.adj = GraphSuccessorsMapping(self)
         self.pred = DiGraphPredecessorsMapping(self)
@@ -1174,11 +1177,11 @@ class MultiGraph(networkx.MultiGraph):
         self._name = name
         self.graph = GraphMapping(gorm, name)
         self.keys = self.graph.keys
-        self.iterkeys = self.graph.iterkeys
         self.values = self.graph.values
-        self.itervalues = self.graph.itervalues
         self.items = self.graph.items
-        self.iteritems = self.graph.iteritems
+        for py2att in ('iterkeys', 'itervalues', 'iteritems'):
+            if hasattr(self.graph, py2att):
+                setattr(self, py2att, getattr(self.graph, py2att))
         self.node = GraphNodeMapping(gorm, name)
         self.adj = MultiGraphSuccessorsMapping(gorm, name)
         if data is not None:
@@ -1200,11 +1203,11 @@ class MultiDiGraph(networkx.MultiDiGraph):
         self._name = name
         self.graph = GraphMapping(gorm, name)
         self.keys = self.graph.keys
-        self.iterkeys = self.graph.iterkeys
         self.values = self.graph.values
-        self.itervalues = self.graph.itervalues
         self.items = self.graph.items
-        self.iteritems = self.graph.iteritems
+        for py2att in ('iterkeys', 'itervalues', 'iteritems'):
+            if hasattr(self.graph, py2att):
+                setattr(self, py2att, getattr(self.graph, py2att))
         self.node = GraphNodeMapping(gorm, name)
         self.adj = MultiGraphSuccessorsMapping(gorm, name)
         self.pred = MultiDiGraphPredecessorsMapping(gorm, name)

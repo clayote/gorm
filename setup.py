@@ -1,7 +1,7 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 setup(
     name = "gorm",
-    version = "0.2.1",
+    version = "0.2.2",
     packages = ["gorm"],
     install_requires = ['networkx>=1.9'],
     author = "Zachary Spector",
