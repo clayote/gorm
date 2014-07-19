@@ -3,8 +3,8 @@
 from pickle import Pickler, Unpickler
 from json import dumps as jsonned
 from json import loads as unjsonned
-from StringIO import StringIO
-from graph import (
+from io import StringIO
+from .graph import (
     Graph,
     DiGraph,
     MultiGraph,
@@ -47,7 +47,7 @@ class ORM(object):
         'int': int,
         'float': float,
         'str': str,
-        'unicode': unicode
+        'unicode': str
     }
     """Map string names of primitive types to the types themselves."""
     type2str = {
@@ -55,7 +55,7 @@ class ORM(object):
         int: 'int',
         float: 'float',
         str: 'str',
-        unicode: 'unicode'
+        str: 'unicode'
     }
     """Map types to their string representations."""
     sql_types = {

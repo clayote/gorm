@@ -198,7 +198,7 @@ class GraphNodeMapping(GraphMapping):
             return False
         if set(self.keys()) != set(other.keys()):
             return False
-        for k in self.iterkeys():
+        for k in self.keys():
             if dict(self[k]) != dict(other[k]):
                 return False
         return True
@@ -496,8 +496,8 @@ class GraphEdgeMapping(GraphMapping):
                 "rev=?;",
                 (
                     self.graph.name,
-                    unicode(self.nodeA),
-                    unicode(self.nodeB),
+                    str(self.nodeA),
+                    str(self.nodeB),
                     self.idx,
                     branch,
                     rev
@@ -514,8 +514,8 @@ class GraphEdgeMapping(GraphMapping):
                 "extant) VALUES (?, ?, ?, ?, ?, ?, ?);",
                 (
                     self.graph.name,
-                    unicode(self.nodeA),
-                    unicode(self.nodeB),
+                    str(self.nodeA),
+                    str(self.nodeB),
                     self.idx,
                     branch,
                     rev,
@@ -622,8 +622,8 @@ class GraphEdgeMapping(GraphMapping):
                 "rev=?;",
                 (
                     self.graph.name,
-                    unicode(self.nodeA),
-                    unicode(self.nodeB),
+                    str(self.nodeA),
+                    str(self.nodeB),
                     self.idx,
                     key,
                     branch,
@@ -644,8 +644,8 @@ class GraphEdgeMapping(GraphMapping):
                 "(?, ?, ?, ?, ?, ?, ?, ?, ?);",
                 (
                     self.graph.name,
-                    unicode(self.nodeA),
-                    unicode(self.nodeB),
+                    str(self.nodeA),
+                    str(self.nodeB),
                     self.idx,
                     key,
                     branch,
@@ -1078,11 +1078,8 @@ class Graph(networkx.Graph):
         self.gorm = gorm
         self.graph = GraphMapping(self)
         self.keys = self.graph.keys
-        self.iterkeys = self.graph.iterkeys
         self.values = self.graph.values
-        self.itervalues = self.graph.itervalues
         self.items = self.graph.items
-        self.iteritems = self.graph.iteritems
         self.node = GraphNodeMapping(self)
         self.adj = GraphSuccessorsMapping(self)
         if data is not None:

@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 setup(
     name = "gorm",
-    version = "0.1.5",
-    packages = find_packages(),
-    install_requires = ['networkx>=1.8.1'],
+    version = "0.2.1",
+    packages = ["gorm"],
+    install_requires = ['networkx>=1.9'],
     author = "Zachary Spector",
     author_email = "zacharyspector@gmail.com",
     description = "An object-relational mapper serving database-backed versions of the standard networkx graph classes.",
