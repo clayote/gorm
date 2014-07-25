@@ -195,7 +195,7 @@ class ORM(object):
             "CREATE TABLE global ("
             "key {text} NOT NULL, "
             "value {text}, "
-            "type {text} NOT NULL, "
+            "type {text} NOT NULL DEFAULT 'str', "
             "PRIMARY KEY (key), "
             "CHECK(type IN "
             "('pickle', 'json', 'str', 'unicode', 'int', 'float', 'bool', 'unset'))"
@@ -325,6 +325,11 @@ class ORM(object):
                 )
 
     def _init_graph(self, name, type_s='Graph'):
+        if self.cursor.execute(
+            "SELECT COUNT(*) FROM graphs WHERE graph=?;",
+            (name,)
+        ).fetchone()[0]:
+            raise KeyError("Already have a graph by that name")
         self.cursor.execute(
             "INSERT INTO graphs (graph, type) VALUES (?, ?);",
             (name, type_s)

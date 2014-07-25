@@ -349,7 +349,7 @@ class GraphNodeMapping(GraphMapping):
                 "rev, "
                 "value, "
                 "valtype) VALUES "
-                "(?, ?, ?, ?, ?, ?);",
+                "(?, ?, ?, ?, ?, ?, ?);",
                 (
                     self.graph.name,
                     self.node,
