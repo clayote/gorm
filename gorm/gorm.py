@@ -304,6 +304,8 @@ class ORM(object):
                 )
         elif typestr == 'json':
             return unjsonned(value)
+        elif typestr == 'unset':
+            return None
         else:
             return self.str2type[typestr](value)
 

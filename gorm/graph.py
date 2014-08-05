@@ -1,6 +1,50 @@
 import networkx
 from networkx.exception import NetworkXError
 from collections import MutableMapping
+from sqlite3 import IntegrityError
+
+
+def window(self, tab, preset_cols, presets, branch, revfrom, revto):
+    """Return a dict of lists of the values assigned to my keys each revision."""
+    self.gorm.cursor.execute(
+        "SELECT parent_rev FROM branches WHERE branch=?;",
+        (branch,)
+    )
+    parrev = self.gorm.cursor.fetchone()[0]
+    if revfrom < parrev:
+        raise ValueError("Can't make a window beginning before the start of its branch")
+    # start with whatever I have at revfrom
+    curbranch = self.gorm.branch
+    currev = self.gorm.rev
+    self.gorm.branch = branch
+    self.gorm.rev = revfrom
+    r = {}
+    for (k, v) in self.items():
+        r[k] = [v]
+    self.gorm.branch = curbranch
+    self.gorm.rev = currev
+    self.gorm.cursor.execute(
+        "SELECT key, rev, value, valtype FROM {table} "
+        "WHERE {presetqs} AND"
+        "branch=? AND "
+        "rev>=? AND "
+        "rev<=? ORDER BY key, rev;".format(
+            table=tab,
+            presetqs=" AND ".join(col + "=?" for col in preset_cols)
+        ),
+        tuple(presets) + (
+            branch,
+            revfrom,
+            revto
+        )
+    )
+    for (key, rev, value, valtype) in self.gorm.cursor.fetchall():
+        l = r[key]
+        padlen = len(l) - rev - revfrom
+        padval = l[-1]
+        l.extend([padval] * padlen)
+        l[rev] = self.gorm.cast(value, valtype)
+    return r
 
 
 class GraphMapping(MutableMapping):
@@ -54,28 +98,40 @@ class GraphMapping(MutableMapping):
         branch = self.gorm.branch
         rev = self.gorm.rev
         (v, valtyp) = self.gorm.stringify(value)
-        # delete first, in case there already is such an assignment
-        self.gorm.cursor.execute(
-            "DELETE FROM graph_val WHERE graph=? AND key=? AND branch=? AND rev=?;",
-            (self.graph.name, key, branch, rev)
-        )
-        self.gorm.cursor.execute(
-            "INSERT INTO graph_val ("
-            "graph, "
-            "key, "
-            "branch, "
-            "rev, "
-            "value, "
-            "valtype) VALUES (?, ?, ?, ?, ?, ?, ?);",
-            (
-                self.graph.name,
-                key,
-                branch,
-                rev,
-                v,
-                valtyp
+        try:
+            self.gorm.cursor.execute(
+                "INSERT INTO graph_val ("
+                "graph, "
+                "key, "
+                "branch, "
+                "rev, "
+                "value, "
+                "valtype) VALUES (?, ?, ?, ?, ?, ?);",
+                (
+                    self.graph.name,
+                    key,
+                    branch,
+                    rev,
+                    v,
+                    valtyp
+                )
             )
-        )
+        except IntegrityError:
+            self.gorm.cursor.execute(
+                "UPDATE graph_val SET value=?, valtype=? "
+                "WHERE graph=? "
+                "AND key=? "
+                "AND branch=? "
+                "AND rev=?;",
+                (
+                    v,
+                    valtyp,
+                    self.graph.name,
+                    key,
+                    branch,
+                    rev
+                )
+            )
 
     def __delitem__(self, key):
         """Indicate that the key has no value at this time"""
@@ -142,6 +198,24 @@ class GraphMapping(MutableMapping):
     def __repr__(self):
         """Looks like a dictionary."""
         return repr(dict(self))
+
+    def window(self, branch, revfrom, revto):
+        return window(
+            "graph_val",
+            ("graph",),
+            (self.name,),
+            branch,
+            revfrom,
+            revto
+        )
+
+    def future(self, revs):
+        rev = self.gorm.rev
+        return self.window(self.gorm.branch, rev, rev + revs)
+
+    def past(self, revs):
+        rev = self.gorm.rev
+        return self.window(self.gorm.branch, rev - revs, rev)
 
 
 class GraphNodeMapping(GraphMapping):
@@ -383,6 +457,88 @@ class GraphNodeMapping(GraphMapping):
             for k in self:
                 del self[k]
             self.exists = False
+
+        def changes(self):
+            """Return a dictionary describing changes in my stats between the
+            current tick and the previous.
+
+            """
+            branch = self.gorm.branch
+            rev = self.gorm.rev
+            # special case when the tick is right at the beginning of a branch
+            self.gorm.cursor.execute(
+                "SELECT parent, parent_rev FROM branches WHERE branch=?;",
+                (branch,)
+            )
+            (parent, parent_rev) = self.engine.cursor.fetchone()
+            before_branch = parent if parent_rev == rev else branch
+            return self.compare(before_branch, rev-1, branch, rev)
+
+        def compare(self, before_branch, before_rev, after_branch, after_rev):
+            self.gorm.cursor.execute(
+                "SELECT before.key, before.value, before.valtype, after.value, after.valtype FROM "
+                "(SELECT key, value, valtype FROM node_val JOIN ("
+                "SELECT graph, node, key, branch, MAX(rev) AS rev FROM node_val "
+                "WHERE graph=? "
+                "AND node=? "
+                "AND branch=? "
+                "AND rev<=? GROUP BY graph, node, key, branch) AS hirev1 "
+                "ON node_val.graph=hirev1.graph "
+                "AND node_val.node=hirev1.node "
+                "AND node_val.key=hirev1.key "
+                "AND node_val.branch=hirev1.branch "
+                "AND node_val.rev=hirev1.rev"
+                ") AS before FULL JOIN "
+                "(SELECT key, value, valtype FROM node_val JOIN ("
+                "SELECT graph, node, key, branch, MAX(rev) AS rev FROM node_val "
+                "WHERE graph=? "
+                "AND node=? "
+                "AND branch=? "
+                "AND rev<=? GROUP BY graph, node, key, branch) AS hirev2 "
+                "ON node_val.graph=hirev2.graph "
+                "AND node_val.node=hirev2.node "
+                "AND node_val.key=hirev2.key "
+                "AND node_val.branch=hirev2.branch "
+                "AND node_val.rev=hirev2.rev"
+                ") AS after "
+                "ON before.key=after.key "
+                "WHERE before.value<>after.value"
+                ";",
+                (
+                    self.graph.name,
+                    self.name,
+                    before_branch,
+                    before_rev,
+                    self.graph.name,
+                    self.name,
+                    after_branch,
+                    after_rev
+                )
+            )
+            r = {}
+            for (key, val0, typ0, val1, typ1) in self.gorm.cursor.fetchall():
+                r[key] = (self.gorm.cast(val0, typ0), self.gorm.cast(val1, typ1))
+            return r
+
+        def window(self, branch, revfrom, revto):
+            return window(
+                "node_vals",
+                ("graph", "node"),
+                (self.graph.name, self.name),
+                branch,
+                revfrom,
+                revto
+            )
+
+        def future(self, revs):
+            branch = self.gorm.branch
+            rev = self.gorm.rev
+            return self.window(branch, rev, rev + revs)
+
+        def past(self, revs):
+            branch = self.gorm.branch
+            rev = self.gorm.rev
+            return self.window(branch, rev - revs, rev)
 
 
 class GraphEdgeMapping(GraphMapping):
@@ -706,6 +862,91 @@ class GraphEdgeMapping(GraphMapping):
             for k in self:
                 del self[k]
             self.exists = False
+
+        def compare(self, branch_before, rev_before, branch_after, rev_after):
+            self.gorm.cursor.execute(
+                "SELECT before.key, before.value, before.valtype, after.value, after.valtype "
+                "FROM (SELECT key, value, valtype FROM edge_val JOIN "
+                "(SELECT graph, nodeA, nodeB, idx, key, branch, MAX(rev) AS rev "
+                "FROM edge_val WHERE "
+                "graph=? AND "
+                "nodeA=? AND "
+                "nodeB=? AND "
+                "idx=? AND "
+                "branch=? AND "
+                "rev<=? GROUP BY graph, nodeA, nodeB, idx, key, branch) AS hirev1 "
+                "ON edge_val.graph=hirev1.graph "
+                "AND edge_val.nodeA=hirev1.nodeA "
+                "AND edge_val.nodeB=hirev1.nodeB "
+                "AND edge_val.idx=hirev1.idx "
+                "AND edge_val.key=hirev1.key "
+                "AND edge_val.branch=hirev1.branch "
+                "AND edge_val.rev=hirev1.rev"
+                ") AS before FULL JOIN "
+                "(SELECT key, value, valtype FROM edge_val JOIN "
+                "(SELECT graph, nodeA, nodeB, idx, key, branch, MAX(rev) AS rev "
+                "FROM edge_val WHERE "
+                "graph=? AND "
+                "nodeA=? AND "
+                "nodeB=? AND "
+                "idx=? AND "
+                "branch=? AND "
+                "rev<=? GROUP BY graph, nodeA, nodeB, idx, key, branch) AS hirev2 "
+                "ON edge_val.graph=hirev2.graph "
+                "AND edge_val.nodeA=hirev2.nodeA "
+                "AND edge_val.nodeB=hirev2.nodeB "
+                "AND edge_val.idx=hirev2.idx "
+                "AND edge_val.key=hirev2.key "
+                "AND edge_val.branch=hirev2.branch "
+                "AND edge_val.rev=hirev2.rev"
+                ") AS after ON "
+                "before.key=after.key "
+                "WHERE before.value<>after.value"
+                ";",
+                (
+                    self.graph.name,
+                    self.nodeA,
+                    self.nodeB,
+                    self.idx,
+                    branch_before,
+                    rev_before,
+                    self.graph.name,
+                    self.nodeA,
+                    self.nodeB,
+                    self.idx,
+                    branch_after,
+                    rev_after
+                )
+            )
+
+        def changes(self):
+            branch = self.gorm.branch
+            rev = self.gorm.rev
+            self.gorm.cursor.execute(
+                "SELECT parent, parent_rev FROM branches WHERE branch=?;",
+                (branch,)
+            )
+            (parent, parent_rev) = self.gorm.cursor.fetchone()
+            before_branch = parent if rev == parent_rev else branch
+            return self.compare(before_branch, rev-1, branch, rev)
+
+        def window(self, branch, revfrom, revto):
+            return window(
+                "edge_vals",
+                ("graph", "nodeA", "nodeB", "idx"),
+                (self.graph.name, self.nodeA, self.nodeB, self.idx),
+                branch,
+                revfrom,
+                revto
+            )
+
+        def future(self, revs):
+            rev = self.gorm.rev
+            return self.window(self.gorm.branch, rev, rev + revs)
+
+        def past(self, revs):
+            rev = self.gorm.rev
+            return self.window(self.gorm.branch, rev - revs, rev)
 
 
 class GraphSuccessorsMapping(GraphEdgeMapping):
@@ -1063,7 +1304,115 @@ class MultiDiGraphPredecessorsMapping(DiGraphPredecessorsMapping):
             return MultiEdges(self.graph, nodeA, self.nodeB)
 
 
-class Graph(networkx.Graph):
+class GormGraph(object):
+    def compare_nodes(self, before_branch, before_tick, after_branch, after_tick):
+        r = {}
+        for node in self.node.values():
+            r[node.name] = node.compare(before_branch, before_tick, after_branch, after_tick)
+        return r
+
+    def node_changes(self):
+        r = {}
+        for node in self.node.values():
+            r[node.name] = node.changes()
+        return r
+
+    def compare_edges(self, before_branch, before_tick, after_branch, after_tick):
+        r = {}
+        for nodeA in self.edge:
+            if nodeA not in r:
+                r[nodeA] = {}
+            for nodeB in self.edge[nodeA]:
+                maybe_edge = self.edge[nodeA][nodeB]
+                if isinstance(maybe_edge, GraphEdgeMapping.Edge):
+                    r[nodeA][nodeB] = maybe_edge.compare(
+                        before_branch,
+                        before_tick,
+                        after_branch,
+                        after_tick
+                    )
+                else:
+                    if nodeB not in r[nodeA]:
+                        r[nodeA][nodeB] = {}
+                    for idx in maybe_edge:
+                        r[nodeA][nodeB][idx] = self.edge[nodeA][nodeB][idx].compare(
+                            before_branch,
+                            before_tick,
+                            after_branch,
+                            after_tick
+                        )
+        return r
+
+    def edge_changes(self):
+        r = {}
+        for nodeA in self.edge:
+            if nodeA not in r:
+                r[nodeA] = {}
+            for nodeB in self.edge[nodeA]:
+                maybe_edge = self.edge[nodeA][nodeB]
+                if isinstance(maybe_edge, GraphEdgeMapping.Edge):
+                    r[nodeA][nodeB] = maybe_edge.changes()
+                else:
+                    if nodeB not in r[nodeA]:
+                        r[nodeA][nodeB] = {}
+                    for idx in maybe_edge:
+                        r[nodeA][nodeB][idx] = self.edge[nodeA][nodeB][idx].changes()
+
+    def compare(self, branch_before, rev_before, branch_after, rev_after):
+        self.gorm.cursor.execute(
+            "SELECT before.key, before.value, before.valtype, after.value, after.valtype "
+            "FROM (SELECT key, value, valtype FROM graph_val JOIN "
+            "(SELECT graph, key, branch, MAX(rev) AS rev "
+            "FROM graph_val WHERE "
+            "graph=? AND "
+            "branch=? AND "
+            "rev<=? GROUP BY graph, key, branch) AS hirev1 "
+            "ON graph_val.graph=hirev1.graph "
+            "AND graph_val.key=hirev1.key "
+            "AND graph_val.branch=hirev1.branch "
+            "AND graph_val.rev=hirev1.rev"
+            ") AS before FULL JOIN "
+            "(SELECT key, value, valtype FROM graph_val JOIN "
+            "(SELECT graph, key, branch, MAX(rev) AS rev "
+            "FROM graph_val WHERE "
+            "graph=? AND "
+            "branch=? AND "
+            "rev<=? GROUP BY graph, key, branch) AS hirev2 "
+            "ON graph_val.graph=hirev2.graph "
+            "AND graph_val.key=hirev2.key "
+            "AND graph_val.branch=hirev2.branch "
+            "AND graph_val.rev=hirev2.rev"
+            ") AS after ON "
+            "before.key=after.key "
+            "WHERE before.value<>after.value"
+            ";",
+            (
+                self.name,
+                branch_before,
+                rev_before,
+                self.name,
+                branch_after,
+                rev_after
+            )
+        )
+        r = {}
+        for (key, val0, typ0, val1, typ1) in self.gorm.cursor.fetchall():
+            r[key] = (self.gorm.cast(val0, typ0), self.gorm.cast(val1, typ1))
+        return r
+
+    def changes(self):
+        branch = self.gorm.branch
+        rev = self.gorm.rev
+        self.gorm.cursor.execute(
+            "SELECT parent, parent_rev FROM branches WHERE branch=?;",
+            (branch,)
+        )
+        (parent, parent_rev) = self.engine.cursor.fetchone()
+        before_branch = parent if parent_rev == rev else branch
+        return self.compare(before_branch, rev-1, branch, rev)
+
+
+class Graph(networkx.Graph, GormGraph):
     def __init__(self, gorm, name, data=None, **attr):
         """A version of the networkx.Graph class that stores its state in a
         database.
@@ -1110,8 +1459,17 @@ class Graph(networkx.Graph):
         self.node.clear()
         self.graph.clear()
 
+    def window(self, branch, revfrom, revto):
+        return self.graph.window(branch, revfrom, revto)
 
-class DiGraph(networkx.DiGraph):
+    def future(self, revs):
+        return self.graph.future(revs)
+
+    def past(self, revs):
+        return self.graph.past(revs)
+
+
+class DiGraph(networkx.DiGraph, GormGraph):
     def __init__(self, gorm, name, data=None, **attr):
 
         """A version of the networkx.DiGraph class that stores its state in a
@@ -1171,8 +1529,17 @@ class DiGraph(networkx.DiGraph):
             if u in self.succ and v in self.succ[u]:
                 del self.succ[u][v]
 
+    def window(self, branch, revfrom, revto):
+        return self.graph.window(branch, revfrom, revto)
 
-class MultiGraph(networkx.MultiGraph):
+    def future(self, revs):
+        return self.graph.future(revs)
+
+    def past(self, revs):
+        return self.graph.past(revs)
+
+
+class MultiGraph(networkx.MultiGraph, GormGraph):
     def __init__(self, gorm, name, data=None, **attr):
         self._name = name
         self.graph = GraphMapping(gorm, name)
@@ -1197,8 +1564,17 @@ class MultiGraph(networkx.MultiGraph):
     def name(self, v):
         raise TypeError("gorm graphs can't be renamed")
 
+    def window(self, branch, revfrom, revto):
+        return self.graph.window(branch, revfrom, revto)
 
-class MultiDiGraph(networkx.MultiDiGraph):
+    def future(self, revs):
+        return self.graph.future(revs)
+
+    def past(self, revs):
+        return self.graph.past(revs)
+
+
+class MultiDiGraph(networkx.MultiDiGraph, GormGraph):
     def __init__(self, gorm, name, data=None, **attr):
         self._name = name
         self.graph = GraphMapping(gorm, name)
@@ -1257,3 +1633,12 @@ class MultiDiGraph(networkx.MultiDiGraph):
             (u, v) = e[:2]
             if u in self.succ and v in self.succ[u]:
                 del self.succ[u][v]
+
+    def window(self, branch, revfrom, revto):
+        return self.graph.window(branch, revfrom, revto)
+
+    def future(self, revs):
+        return self.graph.future(revs)
+
+    def past(self, revs):
+        return self.graph.past(revs)
