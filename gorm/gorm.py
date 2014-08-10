@@ -104,6 +104,7 @@ class ORM(object):
 
     @property
     def branch(self):
+        """Return the global value ``branch``, or ``self._obranch`` if it's set"""
         if self._obranch is not None:
             return self._obranch
         self.cursor.execute(
@@ -113,6 +114,10 @@ class ORM(object):
 
     @branch.setter
     def branch(self, v):
+        """Set the global value ``branch`` and note that the branch's (parent,
+        parent_rev) are the (branch, tick) set previously
+
+        """
         curbranch = self.branch
         currev = self.rev
         if not self._havebranch(v):
@@ -147,6 +152,7 @@ class ORM(object):
 
     @property
     def rev(self):
+        """Return the global value ``rev``, or ``self._orev`` if that's set"""
         if self._orev is not None:
             return self._orev
         self.cursor.execute(
@@ -156,6 +162,11 @@ class ORM(object):
 
     @rev.setter
     def rev(self, v):
+        """Set the global value ``rev``, first checking that it's not before
+        the start of this branch. If it is, also go to the parent
+        branch.
+
+        """
         # first make sure the cursor is not before the start of this branch
         branch = self.branch
         if branch != 'master':

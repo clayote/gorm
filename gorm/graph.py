@@ -410,30 +410,45 @@ class GraphNodeMapping(GraphMapping):
             branch = self.gorm.branch
             rev = self.gorm.rev
             (v, valtyp) = self.gorm.stringify(value)
-            self.gorm.cursor.execute(
-                "DELETE FROM node_val WHERE graph=? AND node=? AND key=? AND branch=? AND rev=?;",
-                (self.graph.name, self.node, key, branch, rev)
-            )
-            self.gorm.cursor.execute(
-                "INSERT INTO node_val ("
-                "graph, "
-                "node, "
-                "key, "
-                "branch, "
-                "rev, "
-                "value, "
-                "valtype) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?);",
-                (
-                    self.graph.name,
-                    self.node,
-                    key,
-                    branch,
-                    rev,
-                    v,
-                    valtyp
+            try:
+                self.gorm.cursor.execute(
+                    "INSERT INTO node_val ("
+                    "graph, "
+                    "node, "
+                    "key, "
+                    "branch, "
+                    "rev, "
+                    "value, "
+                    "valtype) VALUES "
+                    "(?, ?, ?, ?, ?, ?, ?);",
+                    (
+                        self.graph.name,
+                        self.node,
+                        key,
+                        branch,
+                        rev,
+                        v,
+                        valtyp
+                    )
                 )
-            )
+            except IntegrityError:
+                self.gorm.cursor.execute(
+                    "UPDATE node_val SET value=?, valtype=? WHERE "
+                    "graph=? AND "
+                    "node=? AND "
+                    "key=? AND "
+                    "branch=? AND "
+                    "rev=?;",
+                    (
+                        v,
+                        valtyp,
+                        self.graph.name,
+                        self.node,
+                        key,
+                        branch,
+                        rev
+                    )
+                )
 
         def __delitem__(self, key):
             """Set the key's valtype to 'unset', indicating it should be ignored
@@ -442,15 +457,28 @@ class GraphNodeMapping(GraphMapping):
             """
             branch = self.gorm.branch
             rev = self.gorm.rev
-            self.gorm.cursor.execute(
-                "DELETE FROM node_val WHERE graph=? AND node=? AND key=? AND branch=? AND rev=?;",
-                (self.graph.name, self.node, key, branch, rev)
-            )
-            self.gorm.cursor.execute(
-                "INSERT INTO node_val (graph, node, key, branch, rev, valtype) VALUES "
-                "(?, ?, ?, ?, 'unset');",
-                (self.graph.name, self.node, key, branch, rev)
-            )
+            try:
+                self.gorm.cursor.execute(
+                    "INSERT INTO node_val (graph, node, key, branch, rev, valtype) VALUES "
+                    "(?, ?, ?, ?, 'unset');",
+                    (self.graph.name, self.node, key, branch, rev)
+                )
+            except IntegrityError:
+                self.gorm.cursor.execute(
+                    "UPDATE node_val SET valtype='unset' WHERE "
+                    "graph=? AND "
+                    "node=? AND "
+                    "key=? AND "
+                    "branch=? AND "
+                    "rev=?;",
+                    (
+                        self.graph.name,
+                        self.node,
+                        key,
+                        branch,
+                        rev
+                    )
+                )
 
         def clear(self):
             """Delete everything and stop existing"""
@@ -642,42 +670,45 @@ class GraphEdgeMapping(GraphMapping):
                 raise TypeError("Existence is boolean")
             branch = self.gorm.branch
             rev = self.gorm.rev
-            self.gorm.cursor.execute(
-                "DELETE FROM edges WHERE "
-                "graph=? AND "
-                "nodeA=? AND "
-                "nodeB=? AND "
-                "idx=? AND "
-                "branch=? AND "
-                "rev=?;",
-                (
-                    self.graph.name,
-                    str(self.nodeA),
-                    str(self.nodeB),
-                    self.idx,
-                    branch,
-                    rev
+            try:
+                self.gorm.cursor.execute(
+                    "INSERT INTO edges ("
+                    "graph, "
+                    "nodeA, "
+                    "nodeB, "
+                    "idx, "
+                    "branch, "
+                    "rev, "
+                    "extant) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                    (
+                        self.graph.name,
+                        self.nodeA,
+                        self.nodeB,
+                        self.idx,
+                        branch,
+                        rev,
+                        v
+                    )
                 )
-            )
-            self.gorm.cursor.execute(
-                "INSERT INTO edges ("
-                "graph, "
-                "nodeA, "
-                "nodeB, "
-                "idx, "
-                "branch, "
-                "rev, "
-                "extant) VALUES (?, ?, ?, ?, ?, ?, ?);",
-                (
-                    self.graph.name,
-                    str(self.nodeA),
-                    str(self.nodeB),
-                    self.idx,
-                    branch,
-                    rev,
-                    v
+            except IntegrityError:
+                self.gorm.cursor.execute(
+                    "UPDATE edges SET extant=? WHERE "
+                    "graph=? AND "
+                    "nodeA=? AND "
+                    "nodeB=? AND "
+                    "idx=? AND "
+                    "branch=? AND "
+                    "rev=?;",
+                    (
+                        v,
+                        self.graph.name,
+                        self.nodeA,
+                        self.nodeB,
+                        self.idx,
+                        branch,
+                        rev
+                    )
                 )
-            )
 
         def __getitem__(self, key):
             """Return the present value of the key, or raise KeyError if it's
@@ -754,8 +785,8 @@ class GraphEdgeMapping(GraphMapping):
                         rev
                     )
                 )
-                for (key, valtype) in self.gorm.cursor.fetchall():
-                    if key not in seen and valtype != 'unset':
+                for (key, is_unset) in self.gorm.cursor.fetchall():
+                    if key not in seen and not is_unset:
                         yield key
                     seen.add(key)
 
@@ -767,49 +798,53 @@ class GraphEdgeMapping(GraphMapping):
             branch = self.gorm.branch
             rev = self.gorm.rev
             (v, valtyp) = self.gorm.stringify(value)
-            self.gorm.cursor.execute(
-                "DELETE FROM edge_val WHERE "
-                "graph=? AND "
-                "nodeA=? AND "
-                "nodeB=? AND "
-                "idx=? AND "
-                "key=? AND "
-                "branch=? AND "
-                "rev=?;",
-                (
-                    self.graph.name,
-                    str(self.nodeA),
-                    str(self.nodeB),
-                    self.idx,
-                    key,
-                    branch,
-                    rev
+            try:
+                self.gorm.cursor.execute(
+                    "INSERT INTO edge_val ("
+                    "graph, "
+                    "nodeA, "
+                    "nodeB, "
+                    "idx, "
+                    "key, "
+                    "branch, "
+                    "rev, "
+                    "value, "
+                    "valtype) VALUES "
+                    "(?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                    (
+                        self.graph.name,
+                        self.nodeA,
+                        self.nodeB,
+                        self.idx,
+                        key,
+                        branch,
+                        rev,
+                        v,
+                        valtyp
+                    )
                 )
-            )
-            self.gorm.cursor.execute(
-                "INSERT INTO edge_val ("
-                "graph, "
-                "nodeA, "
-                "nodeB, "
-                "idx, "
-                "key, "
-                "branch, "
-                "rev, "
-                "value, "
-                "valtype) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?);",
-                (
-                    self.graph.name,
-                    str(self.nodeA),
-                    str(self.nodeB),
-                    self.idx,
-                    key,
-                    branch,
-                    rev,
-                    v,
-                    valtyp
+            except IntegrityError:
+                self.gorm.cursor.execute(
+                    "UPDATE edge_val SET value=?, valtype=? "
+                    "WHERE graph=? "
+                    "AND nodeA=? "
+                    "AND nodeB=? "
+                    "AND idx=? "
+                    "AND key=? "
+                    "AND branch=? "
+                    "AND rev=?;",
+                    (
+                        v,
+                        valtyp,
+                        self.graph.name,
+                        self.nodeA,
+                        self.nodeB,
+                        self.idx,
+                        key,
+                        branch,
+                        rev
+                    )
                 )
-            )
 
         def __delitem__(self, key):
             """Set the key's valtype to 'unset', such that it is not yielded by
@@ -818,47 +853,50 @@ class GraphEdgeMapping(GraphMapping):
             """
             branch = self.gorm.branch
             rev = self.gorm.rev
-            self.gorm.cursor.execute(
-                "DELETE FROM edge_val WHERE "
-                "graph=? AND "
-                "nodeA=? AND "
-                "nodeB=? AND "
-                "idx=? AND "
-                "key=? AND "
-                "branch=? AND "
-                "rev=?;",
-                (
-                    self.graph.name,
-                    self.nodeA,
-                    self.nodeB,
-                    self.idx,
-                    key,
-                    branch,
-                    rev
+            try:
+                self.gorm.cursor.execute(
+                    "INSERT INTO edge_val ("
+                    "graph, "
+                    "nodeA, "
+                    "nodeB, "
+                    "idx, "
+                    "key, "
+                    "branch, "
+                    "rev, "
+                    "valtype) VALUES ( ?, ?, ?, ?, ?, ?, ?, 'unset');",
+                    (
+                        self.graph.name,
+                        self.nodeA,
+                        self.nodeB,
+                        self.idx,
+                        key,
+                        branch,
+                        rev
+                    )
                 )
-            )
-            self.gorm.cursor.execute(
-                "INSERT INTO edge_val ("
-                "graph, "
-                "nodeA, "
-                "nodeB, "
-                "idx, "
-                "key, "
-                "branch, "
-                "rev, "
-                "valtype) VALUES ( ?, ?, ?, ?, ?, ?, ?, 'unset');",
-                (
-                    self.graph.name,
-                    self.nodeA,
-                    self.nodeB,
-                    self.idx,
-                    key,
-                    branch,
-                    rev,
+            except IntegrityError:
+                self.gorm.cursor.execute(
+                    "UPDATE edge_val SET valtype='unset' "
+                    "WHERE graph=? "
+                    "AND nodeA=? "
+                    "AND nodeB=? "
+                    "AND idx=? "
+                    "AND key=? "
+                    "AND branch=? "
+                    "AND rev=?;",
+                    (
+                        self.graph.name,
+                        self.nodeA,
+                        self.nodeB,
+                        self.idx,
+                        self.key,
+                        self.branch,
+                        self.rev
+                    )
                 )
-            )
 
         def clear(self):
+            """Delete everything, and declare that I don't exist"""
             for k in self:
                 del self[k]
             self.exists = False
