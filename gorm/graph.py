@@ -889,9 +889,9 @@ class GraphEdgeMapping(GraphMapping):
                         self.nodeA,
                         self.nodeB,
                         self.idx,
-                        self.key,
-                        self.branch,
-                        self.rev
+                        key,
+                        branch,
+                        rev
                     )
                 )
 
