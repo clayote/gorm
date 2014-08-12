@@ -195,6 +195,8 @@ class ORM(object):
             "FOREIGN KEY(graph) REFERENCES graphs(graph), "
             "FOREIGN KEY(branch) REFERENCES branches(branch))"
             ";",
+            "CREATE INDEX graph_val_idx ON graph_val(graph, key)"
+            ";",
             "CREATE TABLE nodes ("
             "graph {text} NOT NULL, "
             "node {text} NOT NULL, "
@@ -203,7 +205,10 @@ class ORM(object):
             "extant {boolean} NOT NULL, "
             "PRIMARY KEY (graph, node, branch, rev), "
             "FOREIGN KEY(graph) REFERENCES graphs(graph), "
-            "FOREIGN KEY(branch) REFERENCES branches(branch));",
+            "FOREIGN KEY(branch) REFERENCES branches(branch))"
+            ";",
+            "CREATE INDEX nodes_idx ON nodes(graph, node)"
+            ";",
             "CREATE TABLE node_val ("
             "graph {text} NOT NULL, "
             "node {text} NOT NULL, "
@@ -214,6 +219,8 @@ class ORM(object):
             "PRIMARY KEY(graph, node, key, branch, rev), "
             "FOREIGN KEY(graph, node) REFERENCES nodes(graph, node), "
             "FOREIGN KEY(branch) REFERENCES branches(branch))"
+            ";",
+            "CREATE INDEX node_val_idx ON node_val(graph, node, key)"
             ";",
             "CREATE TABLE edges ("
             "graph {text} NOT NULL, "
@@ -228,6 +235,8 @@ class ORM(object):
             "FOREIGN KEY(graph, nodeB) REFERENCES nodes(graph, node), "
             "FOREIGN KEY(branch) REFERENCES branches(branch))"
             ";",
+            "CREATE INDEX edges_idx ON edges(graph, nodeA, nodeB, idx)"
+            ";",
             "CREATE TABLE edge_val ("
             "graph {text} NOT NULL, "
             "nodeA {text} NOT NULL, "
@@ -241,6 +250,8 @@ class ORM(object):
             "FOREIGN KEY(graph, nodeA, nodeB, idx) "
             "REFERENCES edges(graph, nodeA, nodeB, idx), "
             "FOREIGN KEY(branch) REFERENCES branches(branch))"
+            ";",
+            "CREATE INDEX edge_val_idx ON edge_val(graph, nodeA, nodeB, idx, key)"
             ";"
         ]
         for decl in tabdecls:
