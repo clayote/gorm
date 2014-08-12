@@ -1,8 +1,6 @@
 # This file is part of gorm, an object relational mapper for versioned graphs.
 # Copyright (C) 2014 Zachary Spector.
-from pickle import Pickler, Unpickler
-from json import dumps as jsonned
-from json import loads as unjsonned
+import json
 from io import StringIO
 from .graph import (
     Graph,
@@ -12,52 +10,8 @@ from .graph import (
 )
 
 
-def pickled(v):
-    """Return a string representation of ``v`` pickled.
-
-    Uses pickle protocol version 0.
-
-    """
-    io = StringIO()
-    pck = Pickler(io)
-    pck.dump(v)
-    r = io.getvalue()
-    io.close()
-    return r
-
-
-def unpickled(s):
-    """Take a pickled string representation of an object and return the
-    object.
-
-    Uses pickle protocol version 0.
-
-    """
-    io = StringIO(s)
-    upck = Unpickler(io)
-    r = upck.load()
-    io.close()
-    return r
-
-
 class ORM(object):
     """Instantiate this with a database connector to use gorm."""
-    str2type = {
-        'bool': bool,
-        'int': int,
-        'float': float,
-        'str': str,
-        'unicode': str
-    }
-    """Map string names of primitive types to the types themselves."""
-    type2str = {
-        bool: 'bool',
-        int: 'int',
-        float: 'float',
-        str: 'str',
-        str: 'unicode'
-    }
-    """Map types to their string representations."""
     sql_types = {
         'sqlite': {
             'text': 'TEXT',
@@ -108,9 +62,12 @@ class ORM(object):
         if self._obranch is not None:
             return self._obranch
         self.cursor.execute(
-            "SELECT value FROM global WHERE key='branch';"
+            "SELECT value FROM global WHERE key=?;",
+            (
+                json.dumps('branch'),
+            )
         )
-        return self.cursor.fetchone()[0]
+        return json.loads(self.cursor.fetchone()[0])
 
     @branch.setter
     def branch(self, v):
@@ -126,7 +83,7 @@ class ORM(object):
             self.cursor.execute(
                 "INSERT INTO branches (branch, parent, parent_rev) "
                 "VALUES (?, ?, ?);",
-                (v, curbranch, currev)
+                (json.dumps(v), curbranch, currev)
             )
         if v == 'master':
             return
@@ -147,7 +104,7 @@ class ORM(object):
             )
         self.cursor.execute(
             "UPDATE global SET value=? WHERE key='branch';",
-            (v,)
+            (json.dumps(v),)
         )
 
     @property
@@ -156,9 +113,12 @@ class ORM(object):
         if self._orev is not None:
             return self._orev
         self.cursor.execute(
-            "SELECT value FROM global WHERE key='rev';"
+            "SELECT value FROM global WHERE key=?;",
+            (
+                json.dumps('rev'),
+            )
         )
-        return int(self.cursor.fetchone()[0])
+        return json.loads(self.cursor.fetchone()[0])
 
     @rev.setter
     def rev(self, v):
@@ -172,7 +132,7 @@ class ORM(object):
         if branch != 'master':
             self.cursor.execute(
                 "SELECT parent, parent_rev FROM branches WHERE branch=?;",
-                (branch,)
+                (json.dumps(branch),)
             )
             (parent, parent_rev) = self.cursor.fetchone()
             if v < int(parent_rev):
@@ -182,9 +142,13 @@ class ORM(object):
                     "the branch {brnch}".format(revn=v, brnch=branch)
                 )
         self.cursor.execute(
-            "UPDATE global SET value=? WHERE key='rev';",
-            (v,)
+            "UPDATE global SET value=? WHERE key=?;",
+            (
+                json.dumps(v),
+                json.dumps('rev')
+            )
         )
+        assert(self.rev == v)
 
     def close(self):
         """Commit the transaction and close the cursor.
@@ -204,13 +168,9 @@ class ORM(object):
         """
         tabdecls = [
             "CREATE TABLE global ("
-            "key {text} NOT NULL, "
-            "value {text}, "
-            "type {text} NOT NULL DEFAULT 'str', "
-            "PRIMARY KEY (key), "
-            "CHECK(type IN "
-            "('pickle', 'json', 'str', 'unicode', 'int', 'float', 'bool', 'unset'))"
-            ");",
+            "key {text} NOT NULL PRIMARY KEY, "
+            "value {text})",
+            ";",
             "CREATE TABLE branches ("
             "branch {text} NOT NULL DEFAULT 'master', "
             "parent {text} NOT NULL DEFAULT 'master', "
@@ -231,13 +191,10 @@ class ORM(object):
             "branch {text} NOT NULL DEFAULT 'master', "
             "rev {integer} NOT NULL DEFAULT 0, "
             "value {text}, "
-            "valtype {text} NOT NULL, "
             "PRIMARY KEY (graph, key, branch, rev), "
             "FOREIGN KEY(graph) REFERENCES graphs(graph), "
-            "FOREIGN KEY(branch) REFERENCES branches(branch), "
-            "CHECK(valtype IN "
-            "('pickle', 'json', 'str', 'unicode', 'int', 'float', 'bool', 'unset'))"
-            ");",
+            "FOREIGN KEY(branch) REFERENCES branches(branch))"
+            ";",
             "CREATE TABLE nodes ("
             "graph {text} NOT NULL, "
             "node {text} NOT NULL, "
@@ -254,13 +211,10 @@ class ORM(object):
             "branch {text} NOT NULL DEFAULT 'master', "
             "rev {integer} NOT NULL DEFAULT 0, "
             "value {text}, "
-            "valtype {text} NOT NULL, "
             "PRIMARY KEY(graph, node, key, branch, rev), "
             "FOREIGN KEY(graph, node) REFERENCES nodes(graph, node), "
-            "FOREIGN KEY(branch) REFERENCES branches(branch), "
-            "CHECK(valtype IN "
-            "('pickle', 'json', 'str', 'unicode', 'int', 'float', 'bool', 'unset'))"
-            ");",
+            "FOREIGN KEY(branch) REFERENCES branches(branch))"
+            ";",
             "CREATE TABLE edges ("
             "graph {text} NOT NULL, "
             "nodeA {text} NOT NULL, "
@@ -272,8 +226,8 @@ class ORM(object):
             "PRIMARY KEY (graph, nodeA, nodeB, idx, branch, rev), "
             "FOREIGN KEY(graph, nodeA) REFERENCES nodes(graph, node), "
             "FOREIGN KEY(graph, nodeB) REFERENCES nodes(graph, node), "
-            "FOREIGN KEY(branch) REFERENCES branches(branch)"
-            ");",
+            "FOREIGN KEY(branch) REFERENCES branches(branch))"
+            ";",
             "CREATE TABLE edge_val ("
             "graph {text} NOT NULL, "
             "nodeA {text} NOT NULL, "
@@ -283,59 +237,26 @@ class ORM(object):
             "branch {text} NOT NULL DEFAULT 'master', "
             "rev {integer} NOT NULL DEFAULT 0, "
             "value {text}, "
-            "valtype {text} NOT NULL, "
             "PRIMARY KEY(graph, nodeA, nodeB, idx, key, branch, rev), "
             "FOREIGN KEY(graph, nodeA, nodeB, idx) "
             "REFERENCES edges(graph, nodeA, nodeB, idx), "
-            "FOREIGN KEY(branch) REFERENCES branches(branch), "
-            "CHECK(valtype IN "
-            "('pickle', 'json', 'str', 'unicode', 'int', 'float', 'bool', 'unset'))"
-            ");"
+            "FOREIGN KEY(branch) REFERENCES branches(branch))"
+            ";"
         ]
         for decl in tabdecls:
             s = decl.format(**self.sql_types[self.sql_flavor])
             self.cursor.execute(s)
         globs = [
-            ("branch", "master", "str"),
-            ("rev", 0, "int")
+            ("branch", "master"),
+            ("rev", 0)
         ]
         self.cursor.executemany(
-            "INSERT INTO global (key, value, type) VALUES (?, ?, ?);",
-            globs
+            "INSERT INTO global (key, value) VALUES (?, ?);",
+            (
+                (json.dumps(glob[0]), json.dumps(glob[1]))
+                for glob in globs
+            )
         )
-
-    def cast(self, value, typestr):
-        """Return ``value`` cast into the type indicated by ``typestr``"""
-        if typestr == 'pickle':
-            if self.pickling:
-                return unpickled(value)
-            else:
-                raise TypeError(
-                    "This value is pickled, but pickling is disabled"
-                )
-        elif typestr == 'json':
-            return unjsonned(value)
-        elif typestr == 'unset':
-            return None
-        else:
-            return self.str2type[typestr](value)
-
-    def stringify(self, value):
-        """Return a pair of a string representing the value, and another
-        string describing its type (for use with ``cast_value``)
-
-        """
-        if type(value) in self.type2str:
-            return (value, self.type2str[type(value)])
-        try:
-            return (jsonned(value), 'json')
-        except TypeError:
-            if self.pickling:
-                return (pickled(value), 'pickle')
-            else:
-                raise TypeError(
-                    "Value isn't serializable without pickling"
-                )
 
     def _init_graph(self, name, type_s='Graph'):
         if self.cursor.execute(
@@ -432,8 +353,8 @@ class ORM(object):
         """Iterate over all nodes that presently exist in the graph"""
         seen = set()
         for (branch, rev) in self._active_branches():
-            self.cursor.execute(
-                "SELECT nodes.node, nodes.extant "
+            data = self.cursor.execute(
+                "SELECT nodes.node "
                 "FROM nodes JOIN ("
                 "SELECT graph, node, branch, MAX(rev) AS rev FROM nodes "
                 "WHERE graph=? "
@@ -443,25 +364,19 @@ class ORM(object):
                 "ON nodes.graph=hirev.graph "
                 "AND nodes.node=hirev.node "
                 "AND nodes.branch=hirev.branch "
-                "AND nodes.rev=hirev.rev;",
+                "AND nodes.rev=hirev.rev "
+                "WHERE nodes.node IS NOT NULL;",
                 (
                     graph,
                     branch,
                     rev
                 )
-            )
-            data = self.cursor.fetchall()
+            ).fetchall()
             for row in data:
-                try:
-                    node = int(row[0])
-                except ValueError:
-                    node = row[0]
-                if node in seen:
-                    continue
-                seen.add(node)
-                extant = bool(row[1])
-                if extant:
+                node = json.loads(row[0])
+                if node not in seen:
                     yield node
+                seen.add(node)
 
     def _countnodes(self, graph):
         """How many nodes presently exist in the graph?"""
@@ -472,6 +387,7 @@ class ORM(object):
 
     def _node_exists(self, graph, node):
         """Does this node presently exist in this graph?"""
+        n = json.dumps(node)
         for (branch, rev) in self._active_branches():
             self.cursor.execute(
                 "SELECT nodes.extant FROM nodes JOIN ("
@@ -487,7 +403,7 @@ class ORM(object):
                 "AND nodes.rev=hirev.rev;",
                 (
                     graph,
-                    node,
+                    n,
                     branch,
                     rev
                 )

@@ -1,4 +1,5 @@
 import networkx
+import json
 from networkx.exception import NetworkXError
 from collections import MutableMapping
 from sqlite3 import IntegrityError
@@ -62,8 +63,8 @@ class GraphMapping(MutableMapping):
         if key == 'graph':
             return dict(self)
         for (branch, rev) in self.gorm._active_branches():
-            self.gorm.cursor.execute(
-                "SELECT value, valtype FROM graph_val JOIN ("
+            results = self.gorm.cursor.execute(
+                "SELECT value FROM graph_val JOIN ("
                 "SELECT graph, key, branch, MAX(rev) AS rev "
                 "FROM graph_val WHERE "
                 "graph=? AND "
@@ -76,28 +77,25 @@ class GraphMapping(MutableMapping):
                 "AND graph_val.rev=hirev.rev;",
                 (
                     self.graph.name,
-                    key,
+                    json.dumps(key),
                     branch,
                     rev
                 )
-            )
-            results = self.gorm.cursor.fetchall()
+            ).fetchall()
             if len(results) == 0:
                 continue
             elif len(results) > 1:
                 raise ValueError("Silly data in graph_val table")
             else:
-                (value, valtype) = results.pop()
-                if valtype == 'unset':
-                    raise KeyError("key not set right now")
-                return self.gorm.cast(value, valtype)
+                return json.loads(results[0])
         raise KeyError("key is not set, ever")
 
     def __setitem__(self, key, value):
         """Set key=value at the present branch and revision"""
         branch = self.gorm.branch
         rev = self.gorm.rev
-        (v, valtyp) = self.gorm.stringify(value)
+        k = json.dumps(key)
+        v = json.dumps(value)
         try:
             self.gorm.cursor.execute(
                 "INSERT INTO graph_val ("
@@ -105,27 +103,24 @@ class GraphMapping(MutableMapping):
                 "key, "
                 "branch, "
                 "rev, "
-                "value, "
-                "valtype) VALUES (?, ?, ?, ?, ?, ?);",
+                "value) VALUES (?, ?, ?, ?, ?);",
                 (
                     self.graph.name,
-                    key,
+                    k,
                     branch,
                     rev,
-                    v,
-                    valtyp
+                    v
                 )
             )
         except IntegrityError:
             self.gorm.cursor.execute(
-                "UPDATE graph_val SET value=?, valtype=? "
+                "UPDATE graph_val SET value=? "
                 "WHERE graph=? "
                 "AND key=? "
                 "AND branch=? "
                 "AND rev=?;",
                 (
                     v,
-                    valtyp,
                     self.graph.name,
                     key,
                     branch,
@@ -137,24 +132,40 @@ class GraphMapping(MutableMapping):
         """Indicate that the key has no value at this time"""
         branch = self.gorm.branch
         rev = self.gorm.rev
-        # if there's already a value, delete it
-        self.gorm.cursor.execute(
-            "DELETE FROM graph_val WHERE graph=? AND key=? AND branch=? AND rev=?;",
-            (self.graph.name, key, branch, rev)
-        )
-        # type 'unset' means no value here
-        self.gorm.cursor.execute(
-            "INSERT INTO graph_val (graph, key, branch, rev, valtype) VALUES "
-            "(?, ?, ?, ?, 'unset');",
-            (self.graph.name, key, branch, rev)
-        )
+        k = json.dumps(key)
+        try:
+            self.gorm.cursor.execute(
+                "INSERT INTO graph_val (graph, key, branch, rev, value) VALUES (?, ?, ?, ?, ?);",
+                (
+                    self.name,
+                    k,
+                    branch,
+                    rev,
+                    None
+                )
+            )
+        except IntegrityError:
+            self.gorm.cursor.execute(
+                "UPDATE graph_val SET value=? WHERE "
+                "graph=? AND "
+                "key=? AND "
+                "branch=? AND "
+                "rev=?;",
+                (
+                    None,
+                    self.name,
+                    k,
+                    branch,
+                    rev
+                )
+            )
 
     def __iter__(self):
-        """Iterate over the keys that aren't presently of valtype 'unset'"""
+        """Iterate over the keys that are set"""
         seen = set()
         for (branch, rev) in self.gorm._active_branches():
-            self.gorm.cursor.execute(
-                "SELECT graph_val.key, graph_val.valtype='unset' "
+            data = self.gorm.cursor.execute(
+                "SELECT graph_val.key "
                 "FROM graph_val JOIN ("
                 "SELECT graph, key, branch, MAX(rev) AS rev FROM graph_val "
                 "WHERE graph=? "
@@ -164,24 +175,21 @@ class GraphMapping(MutableMapping):
                 "ON graph_val.graph=hirev.graph "
                 "AND graph_val.key=hirev.key "
                 "AND graph_val.branch=hirev.branch "
-                "AND graph_val.rev=hirev.rev;",
+                "AND graph_val.rev=hirev.rev "
+                "WHERE graph_val.key IS NOT NULL;",
                 (
                     self.graph.name,
                     branch,
                     rev
                 )
-            )
-            for row in self.gorm.cursor.fetchall():
-                try:
-                    key = int(row[0])
-                except ValueError:
-                    key = row[0]
-                if key in seen:
-                    continue
-                seen.add(key)
-                is_unset = bool(row[1])
-                if not is_unset:
+            ).fetchall()
+            if len(data) == 0:
+                continue
+            for row in data:
+                key = json.loads(row[0])
+                if key not in seen:
                     yield key
+                seen.add(key)
 
     def __len__(self):
         """Number of non-'unset' keys"""
@@ -192,7 +200,7 @@ class GraphMapping(MutableMapping):
 
     def clear(self):
         """Delete everything"""
-        for k in self:
+        for k in iter(self):
             del self[k]
 
     def __repr__(self):
@@ -291,47 +299,55 @@ class GraphNodeMapping(GraphMapping):
                 raise TypeError("Existence is boolean")
             branch = self.gorm.branch
             rev=self.gorm.rev
-            self.gorm.cursor.execute(
-                "DELETE FROM nodes WHERE "
-                "graph=? AND "
-                "node=? AND "
-                "branch=? AND "
-                "rev=?;",
-                (
-                    self.graph.name,
-                    self.node,
-                    branch,
-                    rev
+            try:
+                self.gorm.cursor.execute(
+                    "INSERT INTO nodes ("
+                    "graph, "
+                    "node, "
+                    "branch, "
+                    "rev, "
+                    "extant) VALUES (?, ?, ?, ?, ?);",
+                    (
+                        self.graph.name,
+                        self._node,
+                        branch,
+                        rev,
+                        v
+                    )
                 )
-            )
-            self.gorm.cursor.execute(
-                "INSERT INTO nodes ("
-                "graph, "
-                "node, "
-                "branch, "
-                "rev, "
-                "extant) VALUES (?, ?, ?, ?, ?);",
-                (
-                    self.graph.name,
-                    self.node,
-                    branch,
-                    rev,
-                    v
+            except IntegrityError:
+                self.gorm.cursor.execute(
+                    "UPDATE nodes SET extant=? "
+                    "WHERE graph=? "
+                    "AND node=? "
+                    "AND branch=? "
+                    "AND rev=?;",
+                    (
+                        v,
+                        self.graph.name,
+                        self._node,
+                        branch,
+                        rev
+                    )
                 )
-            )
+
 
         def __init__(self, graph, node):
             """Store name and graph"""
             self.graph = graph
             self.gorm = graph.gorm
-            self.node = node
-            self.name = self.node
+            self._node = json.dumps(node)
+
+        @property
+        def node(self):
+            return json.loads(self._node)
 
         def __getitem__(self, key):
             """Get the value of the key at the present branch and rev"""
+            k = json.dumps(key)
             for (branch, rev) in self.gorm._active_branches():
                 self.gorm.cursor.execute(
-                    "SELECT node_val.value, node_val.valtype FROM node_val JOIN ("
+                    "SELECT node_val.value FROM node_val JOIN ("
                     "SELECT graph, node, key, branch, MAX(rev) AS rev "
                     "FROM node_val WHERE "
                     "graph=? AND "
@@ -344,11 +360,12 @@ class GraphNodeMapping(GraphMapping):
                     "AND node_val.node=hirev.node "
                     "AND node_val.key=hirev.key "
                     "AND node_val.branch=hirev.branch "
-                    "AND node_val.rev=hirev.rev;",
+                    "AND node_val.rev=hirev.rev"
+                    "WHERE node_val.value IS NOT NULL;",
                     (
                         self.graph.name,
                         self.node,
-                        key,
+                        k,
                         branch,
                         rev
                     )
@@ -359,11 +376,8 @@ class GraphNodeMapping(GraphMapping):
                 elif len(data) > 1:
                     raise ValueError("Silly data in node_val table")
                 else:
-                    (value, valtype) = data.pop()
-                    if valtype == 'unset':
-                        raise KeyError("key unset at the moment")
-                    return self.gorm.cast(value, valtype)
-            raise KeyError("key never set")
+                    return json.loads(data[0][0])
+            raise KeyError("Key not set")
 
         def __iter__(self):
             """Iterate over those keys that do not have valtype='unset' at the
@@ -373,7 +387,7 @@ class GraphNodeMapping(GraphMapping):
             seen = set()
             for (branch, rev) in self.gorm._active_branches():
                 self.gorm.cursor.execute(
-                    "SELECT node_val.key, node_val.valtype='unset' FROM node_val JOIN ("
+                    "SELECT node_val.key FROM node_val JOIN ("
                     "SELECT graph, node, key, branch, MAX(rev) AS rev "
                     "FROM node_val WHERE "
                     "graph=? AND "
@@ -385,22 +399,20 @@ class GraphNodeMapping(GraphMapping):
                     "node_val.node=hirev.node AND "
                     "node_val.key=hirev.key AND "
                     "node_val.branch=hirev.branch AND "
-                    "node_val.rev=hirev.rev;",
+                    "node_val.rev=hirev.rev "
+                    "WHERE node_val.value IS NOT NULL;",
                     (
                         self.graph.name,
-                        self.node,
+                        self._node,
                         branch,
                         rev
                     )
                 )
                 for (key, valtype) in self.gorm.cursor.fetchall():
-                    try:
-                        key = int(key)
-                    except ValueError:
-                        pass
-                    if key not in seen and valtype != 'unset':
-                        yield key
-                    seen.add(key)
+                    k = json.loads(key)
+                    if k not in seen:
+                        yield k
+                    seen.add(k)
 
         def __setitem__(self, key, value):
             """Set key=value at the present branch and rev. Overwrite if
@@ -409,7 +421,8 @@ class GraphNodeMapping(GraphMapping):
             """
             branch = self.gorm.branch
             rev = self.gorm.rev
-            (v, valtyp) = self.gorm.stringify(value)
+            k = json.dumps(key)
+            v = json.dumps(value)
             try:
                 self.gorm.cursor.execute(
                     "INSERT INTO node_val ("
@@ -418,22 +431,20 @@ class GraphNodeMapping(GraphMapping):
                     "key, "
                     "branch, "
                     "rev, "
-                    "value, "
-                    "valtype) VALUES "
-                    "(?, ?, ?, ?, ?, ?, ?);",
+                    "value) VALUES "
+                    "(?, ?, ?, ?, ?, ?);",
                     (
                         self.graph.name,
-                        self.node,
-                        key,
+                        self._node,
+                        k,
                         branch,
                         rev,
-                        v,
-                        valtyp
+                        v
                     )
                 )
             except IntegrityError:
                 self.gorm.cursor.execute(
-                    "UPDATE node_val SET value=?, valtype=? WHERE "
+                    "UPDATE node_val SET value=? WHERE "
                     "graph=? AND "
                     "node=? AND "
                     "key=? AND "
@@ -441,10 +452,9 @@ class GraphNodeMapping(GraphMapping):
                     "rev=?;",
                     (
                         v,
-                        valtyp,
                         self.graph.name,
-                        self.node,
-                        key,
+                        self._node,
+                        k,
                         branch,
                         rev
                     )
@@ -457,11 +467,12 @@ class GraphNodeMapping(GraphMapping):
             """
             branch = self.gorm.branch
             rev = self.gorm.rev
+            k = json.dumps(key)
             try:
                 self.gorm.cursor.execute(
                     "INSERT INTO node_val (graph, node, key, branch, rev, valtype) VALUES "
                     "(?, ?, ?, ?, 'unset');",
-                    (self.graph.name, self.node, key, branch, rev)
+                    (self.graph.name, self._node, k, branch, rev)
                 )
             except IntegrityError:
                 self.gorm.cursor.execute(
@@ -473,8 +484,8 @@ class GraphNodeMapping(GraphMapping):
                     "rev=?;",
                     (
                         self.graph.name,
-                        self.node,
-                        key,
+                        self._node,
+                        k,
                         branch,
                         rev
                     )
@@ -504,8 +515,8 @@ class GraphNodeMapping(GraphMapping):
 
         def compare(self, before_branch, before_rev, after_branch, after_rev):
             self.gorm.cursor.execute(
-                "SELECT before.key, before.value, before.valtype, after.value, after.valtype FROM "
-                "(SELECT key, value, valtype FROM node_val JOIN ("
+                "SELECT before.key, before.value, after.value FROM "
+                "(SELECT key, value, FROM node_val JOIN ("
                 "SELECT graph, node, key, branch, MAX(rev) AS rev FROM node_val "
                 "WHERE graph=? "
                 "AND node=? "
@@ -517,7 +528,7 @@ class GraphNodeMapping(GraphMapping):
                 "AND node_val.branch=hirev1.branch "
                 "AND node_val.rev=hirev1.rev"
                 ") AS before FULL JOIN "
-                "(SELECT key, value, valtype FROM node_val JOIN ("
+                "(SELECT key, value FROM node_val JOIN ("
                 "SELECT graph, node, key, branch, MAX(rev) AS rev FROM node_val "
                 "WHERE graph=? "
                 "AND node=? "
@@ -534,25 +545,25 @@ class GraphNodeMapping(GraphMapping):
                 ";",
                 (
                     self.graph.name,
-                    self.name,
+                    self._node,
                     before_branch,
                     before_rev,
                     self.graph.name,
-                    self.name,
+                    self._node,
                     after_branch,
                     after_rev
                 )
             )
             r = {}
-            for (key, val0, typ0, val1, typ1) in self.gorm.cursor.fetchall():
-                r[key] = (self.gorm.cast(val0, typ0), self.gorm.cast(val1, typ1))
+            for (key, val0, val1) in self.gorm.cursor.fetchall():
+                r[json.loads(key)] = (json.loads(val0), json.loads(val1))
             return r
 
         def window(self, branch, revfrom, revto):
             return window(
                 "node_vals",
                 ("graph", "node"),
-                (self.graph.name, self.name),
+                (self.graph.name, self._node),
                 branch,
                 revfrom,
                 revto
@@ -617,15 +628,17 @@ class GraphEdgeMapping(GraphMapping):
             """
             self.graph = graph
             self.gorm = graph.gorm
-            try:
-                self.nodeA = int(nodeA)
-            except ValueError:
-                self.nodeA = nodeA
-            try:
-                self.nodeB = int(nodeB)
-            except ValueError:
-                self.nodeB = nodeB
+            self._nodeA = json.dumps(nodeA)
+            self._nodeB = json.dumps(nodeB)
             self.idx = idx
+
+        @property
+        def nodeA(self):
+            return json.loads(self._nodeA)
+
+        @property
+        def nodeB(self):
+            return json.loads(self._nodeB)
 
         @property
         def exists(self):
@@ -648,8 +661,8 @@ class GraphEdgeMapping(GraphMapping):
                     "AND edges.rev=hirev.rev;",
                     (
                         self.graph.name,
-                        self.nodeA,
-                        self.nodeB,
+                        self._nodeA,
+                        self._nodeB,
                         self.idx,
                         branch,
                         rev
@@ -682,8 +695,8 @@ class GraphEdgeMapping(GraphMapping):
                     "extant) VALUES (?, ?, ?, ?, ?, ?, ?);",
                     (
                         self.graph.name,
-                        self.nodeA,
-                        self.nodeB,
+                        self._nodeA,
+                        self._nodeB,
                         self.idx,
                         branch,
                         rev,
@@ -702,8 +715,8 @@ class GraphEdgeMapping(GraphMapping):
                     (
                         v,
                         self.graph.name,
-                        self.nodeA,
-                        self.nodeB,
+                        self._nodeA,
+                        self._nodeB,
                         self.idx,
                         branch,
                         rev
@@ -715,9 +728,10 @@ class GraphEdgeMapping(GraphMapping):
             unset
 
             """
+            k = json.dumps(key)
             for (branch, rev) in self.gorm._active_branches():
                 self.gorm.cursor.execute(
-                    "SELECT edge_val.value, edge_val.valtype FROM edge_val JOIN ("
+                    "SELECT edge_val.value FROM edge_val JOIN ("
                     "SELECT graph, nodeA, nodeB, idx, key, branch, MAX(rev) AS rev "
                     "FROM edge_val WHERE "
                     "graph=? AND "
@@ -734,13 +748,14 @@ class GraphEdgeMapping(GraphMapping):
                     "AND edge_val.idx=hirev.idx "
                     "AND edge_val.key=hirev.key "
                     "AND edge_val.branch=hirev.branch "
-                    "AND edge_val.rev=hirev.rev;",
+                    "AND edge_val.rev=hirev.rev "
+                    "WHERE edge_val.value IS NOT NULL;",
                     (
                         self.graph.name,
-                        self.nodeA,
-                        self.nodeB,
+                        self._nodeA,
+                        self._nodeB,
                         self.idx,
-                        key,
+                        k,
                         branch,
                         rev
                     )
@@ -751,18 +766,15 @@ class GraphEdgeMapping(GraphMapping):
                 elif len(data) > 1:
                     raise ValueError("Silly data in edge_val table")
                 else:
-                    (value, valtype) = data.pop()
-                    if valtype == 'unset':
-                        raise KeyError("key not set at the moment")
-                    return self.gorm.cast(value, valtype)
+                    return json.loads(data[0][0])
             raise KeyError('key never set')
 
         def __iter__(self):
-            """Yield those keys that have a real value, not of valtype 'unset'"""
+            """Yield those keys that have a value"""
             seen = set()
             for (branch, rev) in self.gorm._active_branches():
                 self.gorm.cursor.execute(
-                    "SELECT edge_val.key, edge_val.valtype='unset' FROM edge_val JOIN ("
+                    "SELECT edge_val.key FROM edge_val JOIN ("
                     "SELECT graph, nodeA, nodeB, idx, key, branch, MAX(rev) AS rev "
                     "FROM edge_val WHERE "
                     "graph=? AND "
@@ -775,20 +787,22 @@ class GraphEdgeMapping(GraphMapping):
                     "AND edge_val.nodeA=hirev.nodeA "
                     "AND edge_val.nodeB=hirev.nodeB "
                     "AND edge_val.idx=hirev.idx "
-                    "AND edge_val.rev=hirev.rev;",
+                    "AND edge_val.rev=hirev.rev "
+                    "WHERE edge_val.value IS NOT NULL;",
                     (
                         self.graph.name,
-                        self.nodeA,
-                        self.nodeB,
+                        self._nodeA,
+                        self._nodeB,
                         self.idx,
                         branch,
                         rev
                     )
                 )
-                for (key, is_unset) in self.gorm.cursor.fetchall():
-                    if key not in seen and not is_unset:
-                        yield key
-                    seen.add(key)
+                for (key,) in self.gorm.cursor.fetchall():
+                    k = json.loads(key)
+                    if k not in seen:
+                        yield k
+                    seen.add(k)
 
         def __setitem__(self, key, value):
             """Set a database record to say that key=value at the present branch
@@ -797,7 +811,8 @@ class GraphEdgeMapping(GraphMapping):
             """
             branch = self.gorm.branch
             rev = self.gorm.rev
-            (v, valtyp) = self.gorm.stringify(value)
+            k = json.dumps(key)
+            v = json.dumps(value)
             try:
                 self.gorm.cursor.execute(
                     "INSERT INTO edge_val ("
@@ -808,24 +823,22 @@ class GraphEdgeMapping(GraphMapping):
                     "key, "
                     "branch, "
                     "rev, "
-                    "value, "
-                    "valtype) VALUES "
-                    "(?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                    "value) VALUES "
+                    "(?, ?, ?, ?, ?, ?, ?, ?);",
                     (
                         self.graph.name,
-                        self.nodeA,
-                        self.nodeB,
+                        self._nodeA,
+                        self._nodeB,
                         self.idx,
-                        key,
+                        k,
                         branch,
                         rev,
-                        v,
-                        valtyp
+                        v
                     )
                 )
             except IntegrityError:
                 self.gorm.cursor.execute(
-                    "UPDATE edge_val SET value=?, valtype=? "
+                    "UPDATE edge_val SET value=? "
                     "WHERE graph=? "
                     "AND nodeA=? "
                     "AND nodeB=? "
@@ -835,12 +848,11 @@ class GraphEdgeMapping(GraphMapping):
                     "AND rev=?;",
                     (
                         v,
-                        valtyp,
                         self.graph.name,
-                        self.nodeA,
-                        self.nodeB,
+                        self._nodeA,
+                        self._nodeB,
                         self.idx,
-                        key,
+                        k,
                         branch,
                         rev
                     )
@@ -853,6 +865,7 @@ class GraphEdgeMapping(GraphMapping):
             """
             branch = self.gorm.branch
             rev = self.gorm.rev
+            k = json.dumps(key)
             try:
                 self.gorm.cursor.execute(
                     "INSERT INTO edge_val ("
@@ -863,20 +876,22 @@ class GraphEdgeMapping(GraphMapping):
                     "key, "
                     "branch, "
                     "rev, "
-                    "valtype) VALUES ( ?, ?, ?, ?, ?, ?, ?, 'unset');",
+                    "value) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
                     (
                         self.graph.name,
-                        self.nodeA,
-                        self.nodeB,
+                        self._nodeA,
+                        self._nodeB,
                         self.idx,
-                        key,
+                        k,
                         branch,
-                        rev
+                        rev,
+                        None
                     )
                 )
             except IntegrityError:
                 self.gorm.cursor.execute(
-                    "UPDATE edge_val SET valtype='unset' "
+                    "UPDATE edge_val SET value=? "
                     "WHERE graph=? "
                     "AND nodeA=? "
                     "AND nodeB=? "
@@ -885,11 +900,12 @@ class GraphEdgeMapping(GraphMapping):
                     "AND branch=? "
                     "AND rev=?;",
                     (
+                        None,
                         self.graph.name,
-                        self.nodeA,
-                        self.nodeB,
+                        self._nodeA,
+                        self._nodeB,
                         self.idx,
-                        key,
+                        k,
                         branch,
                         rev
                     )
@@ -903,8 +919,8 @@ class GraphEdgeMapping(GraphMapping):
 
         def compare(self, branch_before, rev_before, branch_after, rev_after):
             self.gorm.cursor.execute(
-                "SELECT before.key, before.value, before.valtype, after.value, after.valtype "
-                "FROM (SELECT key, value, valtype FROM edge_val JOIN "
+                "SELECT before.key, before.value, after.value "
+                "FROM (SELECT key, value FROM edge_val JOIN "
                 "(SELECT graph, nodeA, nodeB, idx, key, branch, MAX(rev) AS rev "
                 "FROM edge_val WHERE "
                 "graph=? AND "
@@ -921,7 +937,7 @@ class GraphEdgeMapping(GraphMapping):
                 "AND edge_val.branch=hirev1.branch "
                 "AND edge_val.rev=hirev1.rev"
                 ") AS before FULL JOIN "
-                "(SELECT key, value, valtype FROM edge_val JOIN "
+                "(SELECT key, value FROM edge_val JOIN "
                 "(SELECT graph, nodeA, nodeB, idx, key, branch, MAX(rev) AS rev "
                 "FROM edge_val WHERE "
                 "graph=? AND "
@@ -943,14 +959,14 @@ class GraphEdgeMapping(GraphMapping):
                 ";",
                 (
                     self.graph.name,
-                    self.nodeA,
-                    self.nodeB,
+                    self._nodeA,
+                    self._nodeB,
                     self.idx,
                     branch_before,
                     rev_before,
                     self.graph.name,
-                    self.nodeA,
-                    self.nodeB,
+                    self._nodeA,
+                    self._nodeB,
                     self.idx,
                     branch_after,
                     rev_after
@@ -972,7 +988,7 @@ class GraphEdgeMapping(GraphMapping):
             return window(
                 "edge_vals",
                 ("graph", "nodeA", "nodeB", "idx"),
-                (self.graph.name, self.nodeA, self.nodeB, self.idx),
+                (self.graph.name, self._nodeA, self._nodeB, self.idx),
                 branch,
                 revfrom,
                 revto
@@ -1018,7 +1034,11 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
             self.container = container
             self.graph = container.graph
             self.gorm = self.graph.gorm
-            self.nodeA = nodeA
+            self._nodeA = json.dumps(nodeA)
+
+        @property
+        def nodeA(self):
+            return json.loads(self._nodeA)
 
         def __iter__(self):
             """Iterate over node IDs that have an edge with my nodeA"""
@@ -1041,16 +1061,13 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
                     "edges.rev=hirev.rev;",
                     (
                         self.graph.name,
-                        self.nodeA,
+                        self._nodeA,
                         branch,
                         rev
                     )
                 )
                 for row in self.gorm.cursor.fetchall():
-                    try:
-                        nodeB = int(row[0])
-                    except ValueError:
-                        nodeB = row[0]
+                    nodeB = json.loads(row[0])
                     extant = bool(row[1])
                     if nodeB not in seen and extant:
                         yield nodeB
@@ -1128,7 +1145,11 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
             self.container = container
             self.graph = container.graph
             self.gorm = self.graph.gorm
-            self.nodeB = nodeB
+            self._nodeB = json.dumps(nodeB)
+
+        @property
+        def nodeB(self):
+            return json.loads(self._nodeB)
 
         def __iter__(self):
             """Iterate over the edges that exist at the present (branch, rev)"""
@@ -1151,16 +1172,13 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                     "edges.rev=hirev.rev;",
                     (
                         self.graph.name,
-                        self.nodeB,
+                        self._nodeB,
                         branch,
                         rev
                     )
                 )
                 for row in self.gorm.cursor.fetchall():
-                    try:
-                        nodeA = int(row[0])
-                    except ValueError:
-                        nodeA = row[0]
+                    nodeA = json.loads(row[0])
                     extant = bool(row[1])
                     if nodeA not in seen and extant:
                         yield nodeA
@@ -1204,8 +1222,16 @@ class MultiEdges(GraphEdgeMapping):
         """Store graph and node IDs"""
         self.graph = graph
         self.gorm = graph.gorm
-        self.nodeA = nodeA
-        self.nodeB = nodeB
+        self._nodeA = json.dumps(nodeA)
+        self._nodeB = json.dumps(nodeB)
+
+    @property
+    def nodeA(self):
+        return json.loads(self._nodeA)
+
+    @property
+    def nodeB(self):
+        return json.loads(self._nodeB)
 
     def __iter__(self):
         """Iterate over the indices of existing edges in ascending order"""
@@ -1230,8 +1256,8 @@ class MultiEdges(GraphEdgeMapping):
                 qms=", ".join("?" * len(branches))
             ), (
                 self.graph.name,
-                self.nodeA,
-                self.nodeB,
+                self._nodeA,
+                self._nodeB,
                 rev
             ) + branches
         )
