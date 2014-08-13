@@ -76,7 +76,7 @@ class GraphMapping(MutableMapping):
                 "AND graph_val.branch=hirev.branch "
                 "AND graph_val.rev=hirev.rev;",
                 (
-                    self.graph.name,
+                    self.graph._name,
                     json.dumps(key),
                     branch,
                     rev
@@ -105,7 +105,7 @@ class GraphMapping(MutableMapping):
                 "rev, "
                 "value) VALUES (?, ?, ?, ?, ?);",
                 (
-                    self.graph.name,
+                    self.graph._name,
                     k,
                     branch,
                     rev,
@@ -121,7 +121,7 @@ class GraphMapping(MutableMapping):
                 "AND rev=?;",
                 (
                     v,
-                    self.graph.name,
+                    self.graph._name,
                     key,
                     branch,
                     rev
@@ -137,7 +137,7 @@ class GraphMapping(MutableMapping):
             self.gorm.cursor.execute(
                 "INSERT INTO graph_val (graph, key, branch, rev, value) VALUES (?, ?, ?, ?, ?);",
                 (
-                    self.name,
+                    self.graph._name,
                     k,
                     branch,
                     rev,
@@ -153,7 +153,7 @@ class GraphMapping(MutableMapping):
                 "rev=?;",
                 (
                     None,
-                    self.name,
+                    self.graph._name,
                     k,
                     branch,
                     rev
@@ -178,7 +178,7 @@ class GraphMapping(MutableMapping):
                 "AND graph_val.rev=hirev.rev "
                 "WHERE graph_val.key IS NOT NULL;",
                 (
-                    self.graph.name,
+                    self.graph._name,
                     branch,
                     rev
                 )
@@ -211,7 +211,7 @@ class GraphMapping(MutableMapping):
         return window(
             "graph_val",
             ("graph",),
-            (self.name,),
+            (self.graph._name,),
             branch,
             revfrom,
             revto
@@ -308,7 +308,7 @@ class GraphNodeMapping(GraphMapping):
                     "rev, "
                     "extant) VALUES (?, ?, ?, ?, ?);",
                     (
-                        self.graph.name,
+                        self.graph._name,
                         self._node,
                         branch,
                         rev,
@@ -324,7 +324,7 @@ class GraphNodeMapping(GraphMapping):
                     "AND rev=?;",
                     (
                         v,
-                        self.graph.name,
+                        self.graph._name,
                         self._node,
                         branch,
                         rev
@@ -363,8 +363,8 @@ class GraphNodeMapping(GraphMapping):
                     "AND node_val.rev=hirev.rev"
                     "WHERE node_val.value IS NOT NULL;",
                     (
-                        self.graph.name,
-                        self.node,
+                        self.graph._name,
+                        self._node,
                         k,
                         branch,
                         rev
@@ -402,7 +402,7 @@ class GraphNodeMapping(GraphMapping):
                     "node_val.rev=hirev.rev "
                     "WHERE node_val.value IS NOT NULL;",
                     (
-                        self.graph.name,
+                        self.graph._name,
                         self._node,
                         branch,
                         rev
@@ -434,7 +434,7 @@ class GraphNodeMapping(GraphMapping):
                     "value) VALUES "
                     "(?, ?, ?, ?, ?, ?);",
                     (
-                        self.graph.name,
+                        self.graph._name,
                         self._node,
                         k,
                         branch,
@@ -452,7 +452,7 @@ class GraphNodeMapping(GraphMapping):
                     "rev=?;",
                     (
                         v,
-                        self.graph.name,
+                        self.graph._name,
                         self._node,
                         k,
                         branch,
@@ -472,7 +472,7 @@ class GraphNodeMapping(GraphMapping):
                 self.gorm.cursor.execute(
                     "INSERT INTO node_val (graph, node, key, branch, rev, valtype) VALUES "
                     "(?, ?, ?, ?, 'unset');",
-                    (self.graph.name, self._node, k, branch, rev)
+                    (self.graph._name, self._node, k, branch, rev)
                 )
             except IntegrityError:
                 self.gorm.cursor.execute(
@@ -483,7 +483,7 @@ class GraphNodeMapping(GraphMapping):
                     "branch=? AND "
                     "rev=?;",
                     (
-                        self.graph.name,
+                        self.graph._name,
                         self._node,
                         k,
                         branch,
@@ -544,11 +544,11 @@ class GraphNodeMapping(GraphMapping):
                 "WHERE before.value<>after.value"
                 ";",
                 (
-                    self.graph.name,
+                    self.graph._name,
                     self._node,
                     before_branch,
                     before_rev,
-                    self.graph.name,
+                    self.graph._name,
                     self._node,
                     after_branch,
                     after_rev
@@ -563,7 +563,7 @@ class GraphNodeMapping(GraphMapping):
             return window(
                 "node_vals",
                 ("graph", "node"),
-                (self.graph.name, self._node),
+                (json.dumps(self.graph.name), self._node),
                 branch,
                 revfrom,
                 revto
@@ -660,7 +660,7 @@ class GraphEdgeMapping(GraphMapping):
                     "AND edges.branch=hirev.branch "
                     "AND edges.rev=hirev.rev;",
                     (
-                        self.graph.name,
+                        json.dumps(self.graph.name),
                         self._nodeA,
                         self._nodeB,
                         self.idx,
@@ -694,7 +694,7 @@ class GraphEdgeMapping(GraphMapping):
                     "rev, "
                     "extant) VALUES (?, ?, ?, ?, ?, ?, ?);",
                     (
-                        self.graph.name,
+                        self.graph._name,
                         self._nodeA,
                         self._nodeB,
                         self.idx,
@@ -714,7 +714,7 @@ class GraphEdgeMapping(GraphMapping):
                     "rev=?;",
                     (
                         v,
-                        self.graph.name,
+                        self.graph._name,
                         self._nodeA,
                         self._nodeB,
                         self.idx,
@@ -751,7 +751,7 @@ class GraphEdgeMapping(GraphMapping):
                     "AND edge_val.rev=hirev.rev "
                     "WHERE edge_val.value IS NOT NULL;",
                     (
-                        self.graph.name,
+                        self.graph._name,
                         self._nodeA,
                         self._nodeB,
                         self.idx,
@@ -790,7 +790,7 @@ class GraphEdgeMapping(GraphMapping):
                     "AND edge_val.rev=hirev.rev "
                     "WHERE edge_val.value IS NOT NULL;",
                     (
-                        self.graph.name,
+                        self.graph._name,
                         self._nodeA,
                         self._nodeB,
                         self.idx,
@@ -826,7 +826,7 @@ class GraphEdgeMapping(GraphMapping):
                     "value) VALUES "
                     "(?, ?, ?, ?, ?, ?, ?, ?);",
                     (
-                        self.graph.name,
+                        self.graph._name,
                         self._nodeA,
                         self._nodeB,
                         self.idx,
@@ -848,7 +848,7 @@ class GraphEdgeMapping(GraphMapping):
                     "AND rev=?;",
                     (
                         v,
-                        self.graph.name,
+                        self.graph._name,
                         self._nodeA,
                         self._nodeB,
                         self.idx,
@@ -879,7 +879,7 @@ class GraphEdgeMapping(GraphMapping):
                     "value) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
                     (
-                        self.graph.name,
+                        self.graph._name,
                         self._nodeA,
                         self._nodeB,
                         self.idx,
@@ -901,7 +901,7 @@ class GraphEdgeMapping(GraphMapping):
                     "AND rev=?;",
                     (
                         None,
-                        self.graph.name,
+                        self.graph._name,
                         self._nodeA,
                         self._nodeB,
                         self.idx,
@@ -958,13 +958,13 @@ class GraphEdgeMapping(GraphMapping):
                 "WHERE before.value<>after.value"
                 ";",
                 (
-                    self.graph.name,
+                    self.graph._name,
                     self._nodeA,
                     self._nodeB,
                     self.idx,
                     branch_before,
                     rev_before,
-                    self.graph.name,
+                    self.graph._name,
                     self._nodeA,
                     self._nodeB,
                     self.idx,
@@ -988,7 +988,7 @@ class GraphEdgeMapping(GraphMapping):
             return window(
                 "edge_vals",
                 ("graph", "nodeA", "nodeB", "idx"),
-                (self.graph.name, self._nodeA, self._nodeB, self.idx),
+                (self.graph._name, self._nodeA, self._nodeB, self.idx),
                 branch,
                 revfrom,
                 revto
@@ -1060,7 +1060,7 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
                     "edges.branch=hirev.branch AND "
                     "edges.rev=hirev.rev;",
                     (
-                        self.graph.name,
+                        self.graph._name,
                         self._nodeA,
                         branch,
                         rev
@@ -1451,10 +1451,10 @@ class GormGraph(object):
             "WHERE before.value<>after.value"
             ";",
             (
-                self.name,
+                json.dumps(self.name),
                 branch_before,
                 rev_before,
-                self.name,
+                json.dumps(self.name),
                 branch_after,
                 rev_after
             )
@@ -1487,7 +1487,7 @@ class Graph(networkx.Graph, GormGraph):
         considered eqivalent to deleting the key altogether.
 
         """
-        self._name = name
+        self._name = json.dumps(name)
         self.gorm = gorm
         self.graph = GraphMapping(self)
         self.keys = self.graph.keys
@@ -1505,7 +1505,7 @@ class Graph(networkx.Graph, GormGraph):
 
     @property
     def name(self):
-        return self._name
+        return json.loads(self._name)
 
     @name.setter
     def name(self, v):
@@ -1546,7 +1546,7 @@ class DiGraph(networkx.DiGraph, GormGraph):
 
         """
         self.gorm = gorm
-        self._name = name
+        self._name = json.dumps(name)
         self.graph = GraphMapping(self)
         self.keys = self.graph.keys
         self.values = self.graph.values
@@ -1565,7 +1565,7 @@ class DiGraph(networkx.DiGraph, GormGraph):
 
     @property
     def name(self):
-        return self._name
+        return json.loads(self._name)
 
     @name.setter
     def name(self, v):
@@ -1605,7 +1605,7 @@ class DiGraph(networkx.DiGraph, GormGraph):
 
 class MultiGraph(networkx.MultiGraph, GormGraph):
     def __init__(self, gorm, name, data=None, **attr):
-        self._name = name
+        self._name = json.dumps(name)
         self.graph = GraphMapping(gorm, name)
         self.keys = self.graph.keys
         self.values = self.graph.values
@@ -1622,7 +1622,7 @@ class MultiGraph(networkx.MultiGraph, GormGraph):
 
     @property
     def name(self):
-        return self._name
+        return json.loads(self._name)
 
     @name.setter
     def name(self, v):
@@ -1640,7 +1640,7 @@ class MultiGraph(networkx.MultiGraph, GormGraph):
 
 class MultiDiGraph(networkx.MultiDiGraph, GormGraph):
     def __init__(self, gorm, name, data=None, **attr):
-        self._name = name
+        self._name = json.dumps(name)
         self.graph = GraphMapping(gorm, name)
         self.keys = self.graph.keys
         self.values = self.graph.values
@@ -1659,7 +1659,7 @@ class MultiDiGraph(networkx.MultiDiGraph, GormGraph):
  
     @property
     def name(self):
-        return self._name
+        return json.loads(self._name)
 
     @name.setter
     def name(self, v):

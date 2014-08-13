@@ -285,7 +285,7 @@ class ORM(object):
         data if provided.
 
         """
-        self._init_graph(name, 'Graph')
+        self._init_graph(json.dumps(name), 'Graph')
         return Graph(self, name, data, **attr)
 
     def new_digraph(self, name, data=None, **attr):
@@ -293,7 +293,7 @@ class ORM(object):
         data if provided.
 
         """
-        self._init_graph(name, 'DiGraph')
+        self._init_graph(json.dumps(name), 'DiGraph')
         return DiGraph(self, name, data, **attr)
 
     def new_multigraph(self, name, data=None, **attr):
@@ -301,7 +301,7 @@ class ORM(object):
         data if provided.
 
         """
-        self._init_graph(name, 'MultiGraph')
+        self._init_graph(json.dumps(name), 'MultiGraph')
         return MultiGraph(self, name, data, **attr)
 
     def new_multidigraph(self, name, data=None, **attr):
@@ -310,7 +310,7 @@ class ORM(object):
 
         """
         self._init_graph(name, 'MultiDiGraph')
-        return MultiDiGraph(self, name, data, **attr)
+        return MultiDiGraph(self, json.dumps(name), data, **attr)
 
     def get_graph(self, name):
         """Return a graph previously created with ``new_graph``,
@@ -318,11 +318,12 @@ class ORM(object):
         ``new_multidigraph``
 
         """
-        self.cursor.execute("SELECT type FROM graphs WHERE graph=?;", (name,))
+        n = json.dumps(name)
+        self.cursor.execute("SELECT type FROM graphs WHERE graph=?;", (n,))
         try:
             (type_s,) = self.cursor.fetchone()
         except TypeError:
-            raise ValueError("I don't know of a graph named {}".format(name))
+            raise ValueError("I don't know of a graph named {}".format(n))
         return {
             'Graph': Graph,
             'DiGraph': DiGraph,
@@ -334,6 +335,7 @@ class ORM(object):
         """Remove all traces of a graph's existence from the database"""
         # make sure the graph exists before deleting anything
         self.get_graph(name)
+        n = json.dumps(name)
         for statement in [
                 "DELETE FROM edge_val WHERE graph=?;",
                 "DELETE FROM edges WHERE graph=?;",
@@ -341,7 +343,7 @@ class ORM(object):
                 "DELETE FROM nodes WHERE graph=?;",
                 "DELETE FROM graphs WHERE graph=?;"
         ]:
-            self.cursor.execute(statement, (name,))
+            self.cursor.execute(statement, (n,))
 
     def _active_branches(self):
         """Private use. Iterate over (branch, rev) pairs, where the branch is
@@ -360,9 +362,10 @@ class ORM(object):
             (branch, rev) = self.cursor.fetchone()
             yield (branch, rev)
 
-    def _iternodes(self, graph):
+    def _iternodes(self, graphn):
         """Iterate over all nodes that presently exist in the graph"""
         seen = set()
+        graph = json.dumps(graphn)
         for (branch, rev) in self._active_branches():
             data = self.cursor.execute(
                 "SELECT nodes.node "
@@ -389,16 +392,17 @@ class ORM(object):
                     yield node
                 seen.add(node)
 
-    def _countnodes(self, graph):
+    def _countnodes(self, graphn):
         """How many nodes presently exist in the graph?"""
         n = 0
-        for node in self._iternodes(graph):
+        for node in self._iternodes(graphn):
             n += 1
         return n
 
-    def _node_exists(self, graph, node):
+    def _node_exists(self, graphn, node):
         """Does this node presently exist in this graph?"""
         n = json.dumps(node)
+        graph = json.dumps(graphn)
         for (branch, rev) in self._active_branches():
             self.cursor.execute(
                 "SELECT nodes.extant FROM nodes JOIN ("
