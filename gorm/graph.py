@@ -87,7 +87,7 @@ class GraphMapping(MutableMapping):
             elif len(results) > 1:
                 raise ValueError("Silly data in graph_val table")
             else:
-                return json.loads(results[0])
+                return json.loads(results[0][0])
         raise KeyError("key is not set, ever")
 
     def __setitem__(self, key, value):
