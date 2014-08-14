@@ -1,12 +1,12 @@
 # This file is part of gorm, an object relational mapper for versioned graphs.
 # Copyright (C) 2014 Zachary Spector.
-import json
-from io import StringIO
 from .graph import (
     Graph,
     DiGraph,
     MultiGraph,
-    MultiDiGraph
+    MultiDiGraph,
+    json_dump,
+    json_load
 )
 
 
@@ -64,10 +64,10 @@ class ORM(object):
         self.cursor.execute(
             "SELECT value FROM global WHERE key=?;",
             (
-                json.dumps('branch'),
+                json_dump('branch'),
             )
         )
-        return json.loads(self.cursor.fetchone()[0])
+        return json_load(self.cursor.fetchone()[0])
 
     @branch.setter
     def branch(self, v):
@@ -83,7 +83,7 @@ class ORM(object):
             self.cursor.execute(
                 "INSERT INTO branches (branch, parent, parent_rev) "
                 "VALUES (?, ?, ?);",
-                (json.dumps(v), curbranch, currev)
+                (json_dump(v), curbranch, currev)
             )
         if v == 'master':
             return
@@ -104,7 +104,7 @@ class ORM(object):
             )
         self.cursor.execute(
             "UPDATE global SET value=? WHERE key='branch';",
-            (json.dumps(v),)
+            (json_dump(v),)
         )
 
     @property
@@ -115,10 +115,10 @@ class ORM(object):
         self.cursor.execute(
             "SELECT value FROM global WHERE key=?;",
             (
-                json.dumps('rev'),
+                json_dump('rev'),
             )
         )
-        return json.loads(self.cursor.fetchone()[0])
+        return json_load(self.cursor.fetchone()[0])
 
     @rev.setter
     def rev(self, v):
@@ -132,7 +132,7 @@ class ORM(object):
         if branch != 'master':
             self.cursor.execute(
                 "SELECT parent, parent_rev FROM branches WHERE branch=?;",
-                (json.dumps(branch),)
+                (json_dump(branch),)
             )
             (parent, parent_rev) = self.cursor.fetchone()
             if v < int(parent_rev):
@@ -144,8 +144,8 @@ class ORM(object):
         self.cursor.execute(
             "UPDATE global SET value=? WHERE key=?;",
             (
-                json.dumps(v),
-                json.dumps('rev')
+                json_dump(v),
+                json_dump('rev')
             )
         )
         assert(self.rev == v)
@@ -264,7 +264,7 @@ class ORM(object):
         self.cursor.executemany(
             "INSERT INTO global (key, value) VALUES (?, ?);",
             (
-                (json.dumps(glob[0]), json.dumps(glob[1]))
+                (json_dump(glob[0]), json_dump(glob[1]))
                 for glob in globs
             )
         )
@@ -285,7 +285,7 @@ class ORM(object):
         data if provided.
 
         """
-        self._init_graph(json.dumps(name), 'Graph')
+        self._init_graph(json_dump(name), 'Graph')
         return Graph(self, name, data, **attr)
 
     def new_digraph(self, name, data=None, **attr):
@@ -293,7 +293,7 @@ class ORM(object):
         data if provided.
 
         """
-        self._init_graph(json.dumps(name), 'DiGraph')
+        self._init_graph(json_dump(name), 'DiGraph')
         return DiGraph(self, name, data, **attr)
 
     def new_multigraph(self, name, data=None, **attr):
@@ -301,7 +301,7 @@ class ORM(object):
         data if provided.
 
         """
-        self._init_graph(json.dumps(name), 'MultiGraph')
+        self._init_graph(json_dump(name), 'MultiGraph')
         return MultiGraph(self, name, data, **attr)
 
     def new_multidigraph(self, name, data=None, **attr):
@@ -310,7 +310,7 @@ class ORM(object):
 
         """
         self._init_graph(name, 'MultiDiGraph')
-        return MultiDiGraph(self, json.dumps(name), data, **attr)
+        return MultiDiGraph(self, json_dump(name), data, **attr)
 
     def get_graph(self, name):
         """Return a graph previously created with ``new_graph``,
@@ -318,7 +318,7 @@ class ORM(object):
         ``new_multidigraph``
 
         """
-        n = json.dumps(name)
+        n = json_dump(name)
         self.cursor.execute("SELECT type FROM graphs WHERE graph=?;", (n,))
         try:
             (type_s,) = self.cursor.fetchone()
@@ -335,7 +335,7 @@ class ORM(object):
         """Remove all traces of a graph's existence from the database"""
         # make sure the graph exists before deleting anything
         self.get_graph(name)
-        n = json.dumps(name)
+        n = json_dump(name)
         for statement in [
                 "DELETE FROM edge_val WHERE graph=?;",
                 "DELETE FROM edges WHERE graph=?;",
@@ -365,7 +365,7 @@ class ORM(object):
     def _iternodes(self, graphn):
         """Iterate over all nodes that presently exist in the graph"""
         seen = set()
-        graph = json.dumps(graphn)
+        graph = json_dump(graphn)
         for (branch, rev) in self._active_branches():
             data = self.cursor.execute(
                 "SELECT nodes.node "
@@ -387,7 +387,7 @@ class ORM(object):
                 )
             ).fetchall()
             for row in data:
-                node = json.loads(row[0])
+                node = json_load(row[0])
                 if node not in seen:
                     yield node
                 seen.add(node)
@@ -401,8 +401,8 @@ class ORM(object):
 
     def _node_exists(self, graphn, node):
         """Does this node presently exist in this graph?"""
-        n = json.dumps(node)
-        graph = json.dumps(graphn)
+        n = json_dump(node)
+        graph = json_dump(graphn)
         for (branch, rev) in self._active_branches():
             self.cursor.execute(
                 "SELECT nodes.extant FROM nodes JOIN ("

@@ -5,6 +5,46 @@ from collections import MutableMapping
 from sqlite3 import IntegrityError
 
 
+def enc_tuple(o):
+    if isinstance(o, tuple):
+        return {
+            'is_tuple': True,
+            'value': [enc_tuple(v) for v in o]
+        }
+    elif isinstance(o, list):
+        return [enc_tuple(v) for v in o]
+    elif isinstance(o, dict):
+        return dict([
+            (enc_tuple(k), enc_tuple(v))
+            for (k, v) in o.items()
+        ])
+    else:
+        return o
+
+
+def dec_tuple(o):
+    if isinstance(o, dict):
+        if 'is_tuple' in o:
+            return tuple(dec_tuple(v) for v in o['value'])
+        return dict([
+            (dec_tuple(k), dec_tuple(v))
+            for (k, v) in o.items()
+        ])
+    elif isinstance(o, list):
+        return [dec_tuple(v) for v in o]
+    else:
+        return o
+
+def json_dump(obj):
+    """JSON dumper that distinguishes lists from tuples"""
+    return json.dumps(enc_tuple(obj))
+
+
+def json_load(s):
+    """JSON loader that distinguishes lists from tuples"""
+    return dec_tuple(json.loads(s))
+
+
 def window(self, tab, preset_cols, presets, branch, revfrom, revto):
     """Return a dict of lists of the values assigned to my keys each revision."""
     self.gorm.cursor.execute(
@@ -77,7 +117,7 @@ class GraphMapping(MutableMapping):
                 "AND graph_val.rev=hirev.rev;",
                 (
                     self.graph._name,
-                    json.dumps(key),
+                    json_dump(key),
                     branch,
                     rev
                 )
@@ -87,15 +127,15 @@ class GraphMapping(MutableMapping):
             elif len(results) > 1:
                 raise ValueError("Silly data in graph_val table")
             else:
-                return json.loads(results[0][0])
+                return json_load(results[0][0])
         raise KeyError("key is not set, ever")
 
     def __setitem__(self, key, value):
         """Set key=value at the present branch and revision"""
         branch = self.gorm.branch
         rev = self.gorm.rev
-        k = json.dumps(key)
-        v = json.dumps(value)
+        k = json_dump(key)
+        v = json_dump(value)
         try:
             self.gorm.cursor.execute(
                 "INSERT INTO graph_val ("
@@ -132,7 +172,7 @@ class GraphMapping(MutableMapping):
         """Indicate that the key has no value at this time"""
         branch = self.gorm.branch
         rev = self.gorm.rev
-        k = json.dumps(key)
+        k = json_dump(key)
         try:
             self.gorm.cursor.execute(
                 "INSERT INTO graph_val (graph, key, branch, rev, value) VALUES (?, ?, ?, ?, ?);",
@@ -186,7 +226,7 @@ class GraphMapping(MutableMapping):
             if len(data) == 0:
                 continue
             for row in data:
-                key = json.loads(row[0])
+                key = json_load(row[0])
                 if key not in seen:
                     yield key
                 seen.add(key)
@@ -336,15 +376,15 @@ class GraphNodeMapping(GraphMapping):
             """Store name and graph"""
             self.graph = graph
             self.gorm = graph.gorm
-            self._node = json.dumps(node)
+            self._node = json_dump(node)
 
         @property
         def node(self):
-            return json.loads(self._node)
+            return json_load(self._node)
 
         def __getitem__(self, key):
             """Get the value of the key at the present branch and rev"""
-            k = json.dumps(key)
+            k = json_dump(key)
             for (branch, rev) in self.gorm._active_branches():
                 self.gorm.cursor.execute(
                     "SELECT node_val.value FROM node_val JOIN ("
@@ -376,7 +416,7 @@ class GraphNodeMapping(GraphMapping):
                 elif len(data) > 1:
                     raise ValueError("Silly data in node_val table")
                 else:
-                    return json.loads(data[0][0])
+                    return json_load(data[0][0])
             raise KeyError("Key not set")
 
         def __iter__(self):
@@ -409,7 +449,7 @@ class GraphNodeMapping(GraphMapping):
                     )
                 )
                 for (key, valtype) in self.gorm.cursor.fetchall():
-                    k = json.loads(key)
+                    k = json_load(key)
                     if k not in seen:
                         yield k
                     seen.add(k)
@@ -421,8 +461,8 @@ class GraphNodeMapping(GraphMapping):
             """
             branch = self.gorm.branch
             rev = self.gorm.rev
-            k = json.dumps(key)
-            v = json.dumps(value)
+            k = json_dump(key)
+            v = json_dump(value)
             try:
                 self.gorm.cursor.execute(
                     "INSERT INTO node_val ("
@@ -467,7 +507,7 @@ class GraphNodeMapping(GraphMapping):
             """
             branch = self.gorm.branch
             rev = self.gorm.rev
-            k = json.dumps(key)
+            k = json_dump(key)
             try:
                 self.gorm.cursor.execute(
                     "INSERT INTO node_val (graph, node, key, branch, rev, valtype) VALUES "
@@ -556,14 +596,14 @@ class GraphNodeMapping(GraphMapping):
             )
             r = {}
             for (key, val0, val1) in self.gorm.cursor.fetchall():
-                r[json.loads(key)] = (json.loads(val0), json.loads(val1))
+                r[json_load(key)] = (json_load(val0), json_load(val1))
             return r
 
         def window(self, branch, revfrom, revto):
             return window(
                 "node_vals",
                 ("graph", "node"),
-                (json.dumps(self.graph.name), self._node),
+                (json_dump(self.graph.name), self._node),
                 branch,
                 revfrom,
                 revto
@@ -628,17 +668,17 @@ class GraphEdgeMapping(GraphMapping):
             """
             self.graph = graph
             self.gorm = graph.gorm
-            self._nodeA = json.dumps(nodeA)
-            self._nodeB = json.dumps(nodeB)
+            self._nodeA = json_dump(nodeA)
+            self._nodeB = json_dump(nodeB)
             self.idx = idx
 
         @property
         def nodeA(self):
-            return json.loads(self._nodeA)
+            return json_load(self._nodeA)
 
         @property
         def nodeB(self):
-            return json.loads(self._nodeB)
+            return json_load(self._nodeB)
 
         @property
         def exists(self):
@@ -660,7 +700,7 @@ class GraphEdgeMapping(GraphMapping):
                     "AND edges.branch=hirev.branch "
                     "AND edges.rev=hirev.rev;",
                     (
-                        json.dumps(self.graph.name),
+                        json_dump(self.graph.name),
                         self._nodeA,
                         self._nodeB,
                         self.idx,
@@ -728,7 +768,7 @@ class GraphEdgeMapping(GraphMapping):
             unset
 
             """
-            k = json.dumps(key)
+            k = json_dump(key)
             for (branch, rev) in self.gorm._active_branches():
                 self.gorm.cursor.execute(
                     "SELECT edge_val.value FROM edge_val JOIN ("
@@ -766,7 +806,7 @@ class GraphEdgeMapping(GraphMapping):
                 elif len(data) > 1:
                     raise ValueError("Silly data in edge_val table")
                 else:
-                    return json.loads(data[0][0])
+                    return json_load(data[0][0])
             raise KeyError('key never set')
 
         def __iter__(self):
@@ -799,7 +839,7 @@ class GraphEdgeMapping(GraphMapping):
                     )
                 )
                 for (key,) in self.gorm.cursor.fetchall():
-                    k = json.loads(key)
+                    k = json_load(key)
                     if k not in seen:
                         yield k
                     seen.add(k)
@@ -811,8 +851,8 @@ class GraphEdgeMapping(GraphMapping):
             """
             branch = self.gorm.branch
             rev = self.gorm.rev
-            k = json.dumps(key)
-            v = json.dumps(value)
+            k = json_dump(key)
+            v = json_dump(value)
             try:
                 self.gorm.cursor.execute(
                     "INSERT INTO edge_val ("
@@ -865,7 +905,7 @@ class GraphEdgeMapping(GraphMapping):
             """
             branch = self.gorm.branch
             rev = self.gorm.rev
-            k = json.dumps(key)
+            k = json_dump(key)
             try:
                 self.gorm.cursor.execute(
                     "INSERT INTO edge_val ("
@@ -1034,11 +1074,11 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
             self.container = container
             self.graph = container.graph
             self.gorm = self.graph.gorm
-            self._nodeA = json.dumps(nodeA)
+            self._nodeA = json_dump(nodeA)
 
         @property
         def nodeA(self):
-            return json.loads(self._nodeA)
+            return json_load(self._nodeA)
 
         def __iter__(self):
             """Iterate over node IDs that have an edge with my nodeA"""
@@ -1067,7 +1107,7 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
                     )
                 )
                 for row in self.gorm.cursor.fetchall():
-                    nodeB = json.loads(row[0])
+                    nodeB = json_load(row[0])
                     extant = bool(row[1])
                     if nodeB not in seen and extant:
                         yield nodeB
@@ -1145,11 +1185,11 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
             self.container = container
             self.graph = container.graph
             self.gorm = self.graph.gorm
-            self._nodeB = json.dumps(nodeB)
+            self._nodeB = json_dump(nodeB)
 
         @property
         def nodeB(self):
-            return json.loads(self._nodeB)
+            return json_load(self._nodeB)
 
         def __iter__(self):
             """Iterate over the edges that exist at the present (branch, rev)"""
@@ -1178,7 +1218,7 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                     )
                 )
                 for row in self.gorm.cursor.fetchall():
-                    nodeA = json.loads(row[0])
+                    nodeA = json_load(row[0])
                     extant = bool(row[1])
                     if nodeA not in seen and extant:
                         yield nodeA
@@ -1222,16 +1262,16 @@ class MultiEdges(GraphEdgeMapping):
         """Store graph and node IDs"""
         self.graph = graph
         self.gorm = graph.gorm
-        self._nodeA = json.dumps(nodeA)
-        self._nodeB = json.dumps(nodeB)
+        self._nodeA = json_dump(nodeA)
+        self._nodeB = json_dump(nodeB)
 
     @property
     def nodeA(self):
-        return json.loads(self._nodeA)
+        return json_load(self._nodeA)
 
     @property
     def nodeB(self):
-        return json.loads(self._nodeB)
+        return json_load(self._nodeB)
 
     def __iter__(self):
         """Iterate over the indices of existing edges in ascending order"""
@@ -1451,10 +1491,10 @@ class GormGraph(object):
             "WHERE before.value<>after.value"
             ";",
             (
-                json.dumps(self.name),
+                json_dump(self.name),
                 branch_before,
                 rev_before,
-                json.dumps(self.name),
+                json_dump(self.name),
                 branch_after,
                 rev_after
             )
@@ -1487,7 +1527,7 @@ class Graph(networkx.Graph, GormGraph):
         considered eqivalent to deleting the key altogether.
 
         """
-        self._name = json.dumps(name)
+        self._name = json_dump(name)
         self.gorm = gorm
         self.graph = GraphMapping(self)
         self.keys = self.graph.keys
@@ -1505,7 +1545,7 @@ class Graph(networkx.Graph, GormGraph):
 
     @property
     def name(self):
-        return json.loads(self._name)
+        return json_load(self._name)
 
     @name.setter
     def name(self, v):
@@ -1546,7 +1586,7 @@ class DiGraph(networkx.DiGraph, GormGraph):
 
         """
         self.gorm = gorm
-        self._name = json.dumps(name)
+        self._name = json_dump(name)
         self.graph = GraphMapping(self)
         self.keys = self.graph.keys
         self.values = self.graph.values
@@ -1565,7 +1605,7 @@ class DiGraph(networkx.DiGraph, GormGraph):
 
     @property
     def name(self):
-        return json.loads(self._name)
+        return json_load(self._name)
 
     @name.setter
     def name(self, v):
@@ -1605,7 +1645,7 @@ class DiGraph(networkx.DiGraph, GormGraph):
 
 class MultiGraph(networkx.MultiGraph, GormGraph):
     def __init__(self, gorm, name, data=None, **attr):
-        self._name = json.dumps(name)
+        self._name = json_dump(name)
         self.graph = GraphMapping(gorm, name)
         self.keys = self.graph.keys
         self.values = self.graph.values
@@ -1622,7 +1662,7 @@ class MultiGraph(networkx.MultiGraph, GormGraph):
 
     @property
     def name(self):
-        return json.loads(self._name)
+        return json_load(self._name)
 
     @name.setter
     def name(self, v):
@@ -1640,7 +1680,7 @@ class MultiGraph(networkx.MultiGraph, GormGraph):
 
 class MultiDiGraph(networkx.MultiDiGraph, GormGraph):
     def __init__(self, gorm, name, data=None, **attr):
-        self._name = json.dumps(name)
+        self._name = json_dump(name)
         self.graph = GraphMapping(gorm, name)
         self.keys = self.graph.keys
         self.values = self.graph.values
@@ -1659,7 +1699,7 @@ class MultiDiGraph(networkx.MultiDiGraph, GormGraph):
  
     @property
     def name(self):
-        return json.loads(self._name)
+        return json_load(self._name)
 
     @name.setter
     def name(self, v):
