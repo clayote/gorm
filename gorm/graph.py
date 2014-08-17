@@ -4,7 +4,6 @@ from networkx.exception import NetworkXError
 from collections import MutableMapping
 from sqlite3 import IntegrityError
 
-
 def enc_tuple(o):
     if isinstance(o, tuple):
         return {
@@ -14,10 +13,10 @@ def enc_tuple(o):
     elif isinstance(o, list):
         return [enc_tuple(v) for v in o]
     elif isinstance(o, dict):
-        return dict([
-            (enc_tuple(k), enc_tuple(v))
-            for (k, v) in o.items()
-        ])
+        r = {}
+        for (k, v) in o.items():
+            r[enc_tuple(k)] = enc_tuple(v)
+        return r
     else:
         return o
 
@@ -26,23 +25,31 @@ def dec_tuple(o):
     if isinstance(o, dict):
         if 'is_tuple' in o:
             return tuple(dec_tuple(v) for v in o['value'])
-        return dict([
-            (dec_tuple(k), dec_tuple(v))
-            for (k, v) in o.items()
-        ])
+        r = {}
+        for (k, v) in o.items():
+            r[enc_tuple(k)] = enc_tuple(v)
+        return r
     elif isinstance(o, list):
         return [dec_tuple(v) for v in o]
     else:
         return o
 
+json_dump_hints = {}
+
 def json_dump(obj):
     """JSON dumper that distinguishes lists from tuples"""
-    return json.dumps(enc_tuple(obj))
+    k = str(obj)
+    if k not in json_dump_hints:
+        json_dump_hints[k] = json.dumps(enc_tuple(obj))
+    return json_dump_hints[k]
 
+json_load_hints = {}
 
 def json_load(s):
     """JSON loader that distinguishes lists from tuples"""
-    return dec_tuple(json.loads(s))
+    if s not in json_load_hints:
+        json_load_hints[s] = dec_tuple(json.loads(s))
+    return json_load_hints[s]
 
 
 def window(self, tab, preset_cols, presets, branch, revfrom, revto):

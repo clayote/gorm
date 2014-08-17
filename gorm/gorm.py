@@ -35,8 +35,7 @@ class ORM(object):
         if sql_flavor not in self.sql_types:
             raise ValueError("Unknown SQL flavor")
         self.sql_flavor = sql_flavor
-        self.connection = connector
-        self.cursor = self.connection.cursor()
+        self.cursor = connector.cursor() if hasattr(connector, 'cursor') else connector
         self._obranch = obranch
         self._orev = orev
 
@@ -355,12 +354,10 @@ class ORM(object):
         rev = self.rev
         yield (branch, rev)
         while branch != 'master':
-            self.cursor.execute(
+            yield self.cursor.execute(
                 "SELECT parent, parent_rev FROM branches WHERE branch=?;",
                 (branch,)
-            )
-            (branch, rev) = self.cursor.fetchone()
-            yield (branch, rev)
+            ).fetchone()
 
     def _iternodes(self, graphn):
         """Iterate over all nodes that presently exist in the graph"""
