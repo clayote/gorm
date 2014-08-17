@@ -400,7 +400,7 @@ class GraphNodeMapping(GraphMapping):
                     "AND node_val.node=hirev.node "
                     "AND node_val.key=hirev.key "
                     "AND node_val.branch=hirev.branch "
-                    "AND node_val.rev=hirev.rev"
+                    "AND node_val.rev=hirev.rev "
                     "WHERE node_val.value IS NOT NULL;",
                     (
                         self.graph._name,
@@ -426,7 +426,7 @@ class GraphNodeMapping(GraphMapping):
             """
             seen = set()
             for (branch, rev) in self.gorm._active_branches():
-                self.gorm.cursor.execute(
+                data = self.gorm.cursor.execute(
                     "SELECT node_val.key FROM node_val JOIN ("
                     "SELECT graph, node, key, branch, MAX(rev) AS rev "
                     "FROM node_val WHERE "
@@ -447,8 +447,8 @@ class GraphNodeMapping(GraphMapping):
                         branch,
                         rev
                     )
-                )
-                for (key, valtype) in self.gorm.cursor.fetchall():
+                ).fetchall()
+                for (key,) in data:
                     k = json_load(key)
                     if k not in seen:
                         yield k
