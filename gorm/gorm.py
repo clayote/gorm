@@ -58,6 +58,41 @@ class ORM(object):
         )
         return self.cursor.fetchone()[0] == 1
 
+    def is_parent_of(self, parent, child):
+        """Return whether ``child`` is a branch descended from ``parent`` at
+        any remove.
+
+        """
+        # trivial cases
+        if child in self._branches and self._branches[child][0] == parent:
+            return True
+        elif child == parent:
+            return False
+        # I will be recursing a lot so just cache all the branch info
+        self._childbranch = {}
+        self._ancestry = {}
+        for (branch, parent, parent_rev) in self.cursor.execute(
+                "SELECT branch, parent, parent_rev FROM branches;"
+        ).fetchall():
+            self._branches[branch] = (parent, parent_rev)
+            self._childbranch[parent] = branch
+
+        self._ancestry[child] = set([parent])
+        lineage = self._ancestry[child]
+
+        def recurse(oneparent):
+            if oneparent in lineage:
+                return True
+            if oneparent not in self._branches:
+                return False
+            if self._branches[oneparent][0] in lineage:
+                return True
+            lineage.add(oneparent)
+            return recurse(self._branches[oneparent][0])
+
+        return recurse(child)
+
+
     @property
     def branch(self):
         """Return the global value ``branch``, or ``self._obranch`` if it's set"""
