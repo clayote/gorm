@@ -38,6 +38,7 @@ class ORM(object):
         self.cursor = connector.cursor() if hasattr(connector, 'cursor') else connector
         self._obranch = obranch
         self._orev = orev
+        self._branches = {}
 
     def __enter__(self):
         """Enable the use of the ``with`` keyword"""
@@ -49,6 +50,8 @@ class ORM(object):
 
     def _havebranch(self, b):
         """Private use. Checks that the branch is known about."""
+        if b in self._branches:
+            return True
         self.cursor.execute(
             "SELECT count(*) FROM branches WHERE branch=?;",
             (b,)
@@ -354,10 +357,13 @@ class ORM(object):
         rev = self.rev
         yield (branch, rev)
         while branch != 'master':
-            yield self.cursor.execute(
-                "SELECT parent, parent_rev FROM branches WHERE branch=?;",
-                (branch,)
-            ).fetchone()
+            if branch not in self._branches:
+                self._branches[branch] = self.cursor.execute(
+                    "SELECT parent, parent_rev FROM branches WHERE branch=?;",
+                    (branch,)
+                ).fetchone()
+            (branch, rev) = self._branches[branch]
+            yield (branch, rev)
 
     def _iternodes(self, graphn):
         """Iterate over all nodes that presently exist in the graph"""
