@@ -169,7 +169,7 @@ class GraphMapping(MutableMapping):
                 (
                     v,
                     self.graph._name,
-                    key,
+                    k,
                     branch,
                     rev
                 )
