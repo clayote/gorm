@@ -207,6 +207,34 @@ class GraphMapping(MutableMapping):
                 )
             )
 
+    def __contains__(self, k):
+        """Do I have a value for this key right now?"""
+        key = json_dump(k)
+        for (branch, rev) in self.gorm._active_branches():
+            data = self.gorm.cursor.execute(
+                "SELECT graph_val.value FROM graph_val JOIN "
+                "(SELECT graph, key, branch, MAX(rev) AS rev "
+                "FROM graph_val WHERE "
+                "graph=? AND "
+                "key=? AND "
+                "branch=? AND "
+                "rev<=? GROUP BY graph, key, branch) AS hirev ON "
+                "graph_val.graph=hirev.graph AND "
+                "graph_val.key=hirev.key AND "
+                "graph_val.branch=hirev.branch AND "
+                "graph_val.rev=hirev.rev;",
+                (
+                    self.graph._name,
+                    key,
+                    branch,
+                    rev
+                )
+            ).fetchall()
+            if len(data) == 0:
+                continue
+            assert(len(data) == 1)
+            return data[0][0] is not None
+
     def __iter__(self):
         """Iterate over the keys that are set"""
         seen = set()
@@ -278,6 +306,9 @@ class GraphNodeMapping(GraphMapping):
     def __init__(self, graph):
         self.graph = graph
         self.gorm = graph.gorm
+
+    def __contains__(self, node):
+        return self.gorm._node_exists(self.graph.name, node)
 
     def __getitem__(self, node):
         """If the node exists at present, return it, else throw KeyError"""
@@ -425,6 +456,41 @@ class GraphNodeMapping(GraphMapping):
                 else:
                     return json_load(data[0][0])
             raise KeyError("Key not set")
+
+        def __contains__(self, k):
+            """Does the key have a value at the moment?"""
+            key = json_dump(k)
+            for (branch, rev) in self.gorm._active_branches():
+                data = self.gorm.cursor.execute(
+                    "SELECT node_val.value FROM node_val JOIN "
+                    "(SELECT graph, node, key, branch, MAX(rev) AS rev "
+                    "FROM node_val WHERE "
+                    "graph=? AND "
+                    "node=? AND "
+                    "key=? AND "
+                    "branch=? AND "
+                    "rev<=? GROUP BY graph, node, key, branch) "
+                    "AS hirev ON "
+                    "node_val.graph=hirev.graph AND "
+                    "node_val.node=hirev.node AND "
+                    "node_val.key=hirev.key AND "
+                    "node_val.branch=hirev.branch AND "
+                    "node_val.rev=hirev.rev;",
+                    (
+                        self.graph._name,
+                        self._node,
+                        key,
+                        branch,
+                        rev
+                    )
+                ).fetchall()
+                if len(data) == 0:
+                    continue
+                elif len(data) > 1:
+                    raise ValueError("Silly data in node_val table")
+                else:
+                    return data[0][0] is not None
+            return False
 
         def __iter__(self):
             """Iterate over those keys that do not have valtype='unset' at the
@@ -641,6 +707,9 @@ class GraphEdgeMapping(GraphMapping):
         """Iterate over the nodes that exist at the moment"""
         return self.gorm._iternodes(self.graph.name)
 
+    def __contains__(self, node):
+        return self.gorm._node_exists(self.graph.name, node)
+
     def __len__(self):
         """How many nodes do I have at the moment?"""
         return self.gorm._countnodes(self.graph.name)
@@ -815,6 +884,44 @@ class GraphEdgeMapping(GraphMapping):
                 else:
                     return json_load(data[0][0])
             raise KeyError('key never set')
+
+        def __contains__(self, k):
+            """Does this key have a value at the moment?"""
+            key = json_dump(k)
+            for (branch, rev) in self.gorm._active_branches():
+                data = self.gorm.cursor.execute(
+                    "SELECT edge_val.value FROM edge_val JOIN "
+                    "(SELECT graph, nodeA, nodeB, idx, key, branch, "
+                    "MAX(rev) AS rev FROM edge_val WHERE "
+                    "graph=? AND "
+                    "nodeA=? AND "
+                    "nodeB=? AND "
+                    "idx=? AND "
+                    "key=? AND "
+                    "branch=? AND "
+                    "rev<=? GROUP BY "
+                    "graph, nodeA, nodeB, idx, key, branch) AS hirev ON "
+                    "edge_val.graph=hirev.graph AND "
+                    "edge_val.nodeA=hirev.nodeA AND "
+                    "edge_val.nodeB=hirev.nodeB AND "
+                    "edge_val.idx=hirev.idx AND "
+                    "edge_val.key=hirev.key AND "
+                    "edge_val.branch=hirev.branch AND "
+                    "edge_val.rev=hirev.rev;",
+                    (
+                        self.graph._name,
+                        self._nodeA,
+                        self._nodeB,
+                        self.idx,
+                        key,
+                        branch,
+                        rev
+                    )
+                ).fetchall()
+                if len(data) == 0:
+                    continue
+                assert(len(data) == 1)
+                return data[0][0] is not None
 
         def __iter__(self):
             """Yield those keys that have a value"""
