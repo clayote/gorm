@@ -1371,7 +1371,7 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                     "graph=? AND "
                     "nodeB=? AND "
                     "branch=? AND "
-                    "rev=? "
+                    "rev<=? "
                     "GROUP BY graph, nodeA, nodeB, idx, branch "
                     ") AS hirev ON "
                     "edges.graph=hirev.graph AND "
@@ -1381,7 +1381,7 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                     "edges.branch=hirev.branch AND "
                     "edges.rev=hirev.rev;",
                     (
-                        self.graph.name,
+                        self.graph._name,
                         self._nodeB,
                         branch,
                         rev
