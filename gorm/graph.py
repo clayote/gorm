@@ -6,6 +6,10 @@ from sqlite3 import IntegrityError
 
 
 def enc_tuple(o):
+    """Return the object, converted to a form that will preserve the
+    distinction between lists and tuples when written to JSON
+
+    """
     if isinstance(o, tuple):
         return {
             'is_tuple': True,
@@ -23,6 +27,10 @@ def enc_tuple(o):
 
 
 def dec_tuple(o):
+    """Take an object previously encoded with ``enc_tuple`` and return it
+    with the encoded tuples turned back into actual tuples
+
+    """
     if isinstance(o, dict):
         if 'is_tuple' in o:
             return tuple(dec_tuple(v) for v in o['value'])
@@ -295,6 +303,11 @@ class GraphMapping(MutableMapping):
         return repr(dict(self))
 
     def window(self, branch, revfrom, revto):
+        """Return a dict of lists of the values assigned to my keys on each
+        revision from ``revfrom`` to ``revto`` in branch
+        ``branch``.
+
+        """
         return window(
             "graph_val",
             ("graph",),
@@ -305,10 +318,18 @@ class GraphMapping(MutableMapping):
         )
 
     def future(self, revs):
+        """Return a dict of lists of the values assigned to my keys in the
+        next ``revs`` revisions.
+
+        """
         rev = self.gorm.rev
         return self.window(self.gorm.branch, rev, rev + revs)
 
     def past(self, revs):
+        """Return a dict of lists of the values assigned to my keys in the
+        previous ``revs`` revisions.
+
+        """
         rev = self.gorm.rev
         return self.window(self.gorm.branch, rev - revs, rev)
 
@@ -638,6 +659,13 @@ class GraphNodeMapping(GraphMapping):
             return self.compare(before_branch, rev-1, branch, rev)
 
         def compare(self, before_branch, before_rev, after_branch, after_rev):
+            """Return a dict of pairs of values assigned to my keys.
+
+            The first element of each pair is the value at
+            ``(before_branch, before_rev)``. The second is the value
+            at ``(after_branch, after_rev)``.
+
+            """
             self.gorm.cursor.execute(
                 "SELECT before.key, before.value, after.value FROM "
                 "(SELECT key, value, FROM node_val JOIN ("
@@ -686,6 +714,11 @@ class GraphNodeMapping(GraphMapping):
             return r
 
         def window(self, branch, revfrom, revto):
+            """Return a dict of lists of the values assigned to my keys each
+            revision from ``revfrom`` to ``revto`` in the branch
+            ``branch``.
+
+            """
             return window(
                 "node_vals",
                 ("graph", "node"),
@@ -696,11 +729,19 @@ class GraphNodeMapping(GraphMapping):
             )
 
         def future(self, revs):
+            """Return a dict of lists of the values assigned to my keys in each of
+            the next ``revs`` revisions.
+
+            """
             branch = self.gorm.branch
             rev = self.gorm.rev
             return self.window(branch, rev, rev + revs)
 
         def past(self, revs):
+            """Return a dict of lists of the values assigned to each of my keys in
+            each of the previous ``revs`` revisions.
+
+            """
             branch = self.gorm.branch
             rev = self.gorm.rev
             return self.window(branch, rev - revs, rev)
@@ -1149,6 +1190,10 @@ class GraphEdgeMapping(GraphMapping):
             )
 
         def changes(self):
+            """Return a dictionary describing changes in my stats between the
+            current tick and the previous.
+
+            """
             branch = self.gorm.branch
             rev = self.gorm.rev
             self.gorm.cursor.execute(
@@ -1160,6 +1205,10 @@ class GraphEdgeMapping(GraphMapping):
             return self.compare(before_branch, rev-1, branch, rev)
 
         def window(self, branch, revfrom, revto):
+            """Return a dict of lists of the values assigned to my keys each
+            revision from ``revfrom`` to ``revto`` in the branch ``branch``.
+
+            """
             return window(
                 "edge_vals",
                 ("graph", "nodeA", "nodeB", "idx"),
@@ -1170,10 +1219,18 @@ class GraphEdgeMapping(GraphMapping):
             )
 
         def future(self, revs):
+            """Return a dict of lists of the values assigned to my keys in each of
+            the next ``revs`` revisions.
+
+            """
             rev = self.gorm.rev
             return self.window(self.gorm.branch, rev, rev + revs)
 
         def past(self, revs):
+            """Return a dict of lists of the values assigned to each of my keys in
+            each of the previous ``revs`` revisions.
+
+            """
             rev = self.gorm.rev
             return self.window(self.gorm.branch, rev - revs, rev)
 
@@ -1249,11 +1306,13 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
                     seen.add(nodeB)
 
         def __contains__(self, nodeB):
+            """Is there an edge leading to ``nodeB`` at the moment?"""
             b = json_dump(nodeB)
             for (branch, rev) in self.gorm._active_branches():
                 data = self.gorm.cursor.execute(
                     "SELECT edges.extant FROM edges JOIN "
-                    "(SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
+                    "(SELECT graph, nodeA, nodeB, idx, branch, "
+                    "MAX(rev) AS rev "
                     "FROM edges WHERE "
                     "graph=? AND "
                     "nodeA=? AND "
@@ -1395,6 +1454,7 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                     seen.add(nodeA)
 
         def __contains__(self, nodeA):
+            """Is there an edge from ``nodeA`` at the moment?"""
             a = json_dump(nodeA)
             for (branch, rev) in self.gorm._active_branches():
                 data = self.gorm.cursor.execute(
@@ -1612,36 +1672,83 @@ class MultiDiGraphPredecessorsMapping(DiGraphPredecessorsMapping):
 
 
 class GormGraph(object):
+    """Class giving the gorm graphs those methods they share in
+    common.
+
+    """
+    def _init_atts(self, gorm, name):
+        """Initialize the mappings that are the same for all gorm graphs"""
+        self._name = json_dump(name)
+        self.gorm = gorm
+        self.graph = GraphMapping(self)
+        self.window = self.graph.window
+        self.future = self.graph.future
+        self.past = self.graph.past
+        self.node = GraphNodeMapping(self)
+
+    @property
+    def name(self):
+        return json_load(self._name)
+
+    @name.setter
+    def name(self, v):
+        raise TypeError("gorm graphs can't be renamed")
+
+    def _and_previous(self):
+        """Return a 4-tuple that will usually be (current branch, current
+        revision - 1, current branch, current revision), unless
+        current revision - 1 is before the start of the current
+        branch, in which case the first element will be the parent
+        branch.
+
+        """
+        branch = self.gorm.branch
+        rev = self.gorm.rev
+        self.gorm.cursor.execute(
+            "SELECT parent, parent_rev FROM branches WHERE branch=?;",
+            (branch,)
+        )
+        (parent, parent_rev) = self.engine.cursor.fetchone()
+        before_branch = parent if parent_rev == rev else branch
+        return (before_branch, rev-1, branch, rev)
+
     def compare_nodes(
             self,
             before_branch,
-            before_tick,
+            before_rev,
             after_branch,
-            after_tick
+            after_rev
     ):
+        """Return a dict describing changes to my nodes between the given revisions.
+
+        """
         r = {}
         for node in self.node.values():
             r[node.name] = node.compare(
                 before_branch,
-                before_tick,
+                before_rev,
                 after_branch,
-                after_tick
+                after_rev
             )
         return r
 
     def node_changes(self):
-        r = {}
-        for node in self.node.values():
-            r[node.name] = node.changes()
-        return r
+        """Return a dict describing changes to my nodes between the present
+        revision and the previous.
+
+        """
+        return self.compare_nodes(*self._and_previous())
 
     def compare_edges(
             self,
             before_branch,
-            before_tick,
+            before_rev,
             after_branch,
-            after_tick
+            after_rev
     ):
+        """Return a dict describing changes to my edges between the given revisions.
+
+        """
         r = {}
         for nodeA in self.edge:
             if nodeA not in r:
@@ -1651,9 +1758,9 @@ class GormGraph(object):
                 if isinstance(maybe_edge, GraphEdgeMapping.Edge):
                     r[nodeA][nodeB] = maybe_edge.compare(
                         before_branch,
-                        before_tick,
+                        before_rev,
                         after_branch,
-                        after_tick
+                        after_rev
                     )
                 else:
                     if nodeB not in r[nodeA]:
@@ -1667,34 +1774,24 @@ class GormGraph(object):
                             idx
                         ].compare(
                             before_branch,
-                            before_tick,
+                            before_rev,
                             after_branch,
-                            after_tick
+                            after_rev
                         )
         return r
 
     def edge_changes(self):
-        r = {}
-        for nodeA in self.edge:
-            if nodeA not in r:
-                r[nodeA] = {}
-            for nodeB in self.edge[nodeA]:
-                maybe_edge = self.edge[nodeA][nodeB]
-                if isinstance(maybe_edge, GraphEdgeMapping.Edge):
-                    r[nodeA][nodeB] = maybe_edge.changes()
-                else:
-                    if nodeB not in r[nodeA]:
-                        r[nodeA][nodeB] = {}
-                    for idx in maybe_edge:
-                        r[nodeA][nodeB][idx] = self.edge[
-                            nodeA
-                        ][
-                            nodeB
-                        ][
-                            idx
-                        ].changes()
+        """Return a dict describing changes to my edges between the present
+        revision and the previous.
+
+        """
+        return self.compare_edges(*self._and_previous())
 
     def compare(self, branch_before, rev_before, branch_after, rev_after):
+        """Return a dict describing changes to my attributes between the given
+        revisions.
+
+        """
         self.gorm.cursor.execute(
             "SELECT before.key, before.value, after.value "
             "FROM (SELECT key, value, valtype FROM graph_val JOIN "
@@ -1723,65 +1820,26 @@ class GormGraph(object):
             "WHERE before.value<>after.value"
             ";",
             (
-                json_dump(self.name),
+                self._name,
                 branch_before,
                 rev_before,
-                json_dump(self.name),
+                self._name,
                 branch_after,
                 rev_after
             )
         )
         r = {}
-        for (key, val0, typ0, val1, typ1) in self.gorm.cursor.fetchall():
-            r[key] = (self.gorm.cast(val0, typ0), self.gorm.cast(val1, typ1))
+        for (key, val0, val1) in self.gorm.cursor.fetchall():
+            if val0 != val1:
+                r[key] = (json_load(val0), json_load(val1))
         return r
 
     def changes(self):
-        branch = self.gorm.branch
-        rev = self.gorm.rev
-        self.gorm.cursor.execute(
-            "SELECT parent, parent_rev FROM branches WHERE branch=?;",
-            (branch,)
-        )
-        (parent, parent_rev) = self.engine.cursor.fetchone()
-        before_branch = parent if parent_rev == rev else branch
-        return self.compare(before_branch, rev-1, branch, rev)
-
-
-class Graph(networkx.Graph, GormGraph):
-    def __init__(self, gorm, name, data=None, **attr):
-        """A version of the networkx.Graph class that stores its state in a
-        database.
-
-        For the most part, works just like networkx.Graph, but you
-        can't change its name after creation, and you can't assign
-        None as the value of any key--or rather, doing so is
-        considered eqivalent to deleting the key altogether.
+        """Return a dict describing changes to my attributes between this
+        revision and the previous.
 
         """
-        self._name = json_dump(name)
-        self.gorm = gorm
-        self.graph = GraphMapping(self)
-        self.keys = self.graph.keys
-        self.values = self.graph.values
-        self.items = self.graph.items
-        for py2att in ('iterkeys', 'itervalues', 'iteritems'):
-            if hasattr(self.graph, py2att):
-                setattr(self, py2att, getattr(self.graph, py2att))
-        self.node = GraphNodeMapping(self)
-        self.adj = GraphSuccessorsMapping(self)
-        if data is not None:
-            networkx.convert.to_networkx_graph(data, create_using=self)
-        self.graph.update(attr)
-        self.edge = self.adj
-
-    @property
-    def name(self):
-        return json_load(self._name)
-
-    @name.setter
-    def name(self, v):
-        raise TypeError("gorm graphs can't be renamed")
+        return self.compare(*self._and_previous())
 
     def clear(self):
         """Remove all nodes and edges from the graph.
@@ -1795,53 +1853,42 @@ class Graph(networkx.Graph, GormGraph):
         self.node.clear()
         self.graph.clear()
 
-    def window(self, branch, revfrom, revto):
-        return self.graph.window(branch, revfrom, revto)
 
-    def future(self, revs):
-        return self.graph.future(revs)
+class Graph(networkx.Graph, GormGraph):
+    """A version of the networkx.Graph class that stores its state in a
+    database.
 
-    def past(self, revs):
-        return self.graph.past(revs)
-
-
-class DiGraph(networkx.DiGraph, GormGraph):
+    """
     def __init__(self, gorm, name, data=None, **attr):
-
-        """A version of the networkx.DiGraph class that stores its state in a
-        database.
-
-        For the most part, works just like networkx.DiGraph, but you
-        can't change its name after creation, and you can't assign
-        None as the value of any key--or rather, doing so is
-        considered eqivalent to deleting the key altogether.
+        """Call ``_init_atts``, instantiate special mappings, convert ``data``
+        argument, and then update graph attributes from kwargs.
 
         """
-        self.gorm = gorm
-        self._name = json_dump(name)
-        self.graph = GraphMapping(self)
-        self.keys = self.graph.keys
-        self.values = self.graph.values
-        self.items = self.graph.items
-        for py2att in ('iterkeys', 'itervalues', 'iteritems'):
-            if hasattr(self.graph, py2att):
-                setattr(self, py2att, getattr(self.graph, py2att))
-        self.node = GraphNodeMapping(self)
+        self._init_atts(gorm, name)
+        self.adj = GraphSuccessorsMapping(self)
+        self.edge = self.adj
+        if data is not None:
+            networkx.convert.to_networkx_graph(data, create_using=self)
+        self.graph.update(attr)
+
+
+class DiGraph(GormGraph, networkx.DiGraph):
+    """A version of the networkx.DiGraph class that stores its state in a
+    database.
+
+    """
+    def __init__(self, gorm, name, data=None, **attr):
+        """Call ``_init_atts``, instantiate special mappings, convert ``data``
+        argument, and then update graph attributes from kwargs.
+
+        """
+        self._init_atts(gorm, name)
         self.adj = GraphSuccessorsMapping(self)
         self.pred = DiGraphPredecessorsMapping(self)
         self.succ = self.adj
         if data is not None:
             networkx.convert.to_networkx_graph(data, create_using=self)
         self.graph.update(attr)
-        self.edge = self.adj
-
-    @property
-    def name(self):
-        return json_load(self._name)
-
-    @name.setter
-    def name(self, v):
-        raise TypeError("gorm graphs can't be renamed")
 
     def remove_edge(self, u, v):
         """Version of remove_edge that's much like normal networkx but only
@@ -1867,77 +1914,42 @@ class DiGraph(networkx.DiGraph, GormGraph):
             if u in self.succ and v in self.succ[u]:
                 del self.succ[u][v]
 
-    def window(self, branch, revfrom, revto):
-        return self.graph.window(branch, revfrom, revto)
-
-    def future(self, revs):
-        return self.graph.future(revs)
-
-    def past(self, revs):
-        return self.graph.past(revs)
-
 
 class MultiGraph(networkx.MultiGraph, GormGraph):
+    """A version of the networkx.MultiGraph class that stores its state in a
+    database.
+
+    """
     def __init__(self, gorm, name, data=None, **attr):
-        self._name = json_dump(name)
-        self.graph = GraphMapping(gorm, name)
-        self.keys = self.graph.keys
-        self.values = self.graph.values
-        self.items = self.graph.items
-        for py2att in ('iterkeys', 'itervalues', 'iteritems'):
-            if hasattr(self.graph, py2att):
-                setattr(self, py2att, getattr(self.graph, py2att))
-        self.node = GraphNodeMapping(gorm, name)
+        """Call ``_init_atts``, instantiate special mappings, convert ``data``
+        argument, and then update graph attributes from kwargs.
+
+        """
+        self._init_atts(gorm, name)
         self.adj = MultiGraphSuccessorsMapping(gorm, name)
+        self.edge = self.adj
         if data is not None:
             networkx.convert.to_networkx_graph(data, create_using=self)
         self.graph.update(attr)
-        self.edge = self.adj
-
-    @property
-    def name(self):
-        return json_load(self._name)
-
-    @name.setter
-    def name(self, v):
-        raise TypeError("gorm graphs can't be renamed")
-
-    def window(self, branch, revfrom, revto):
-        return self.graph.window(branch, revfrom, revto)
-
-    def future(self, revs):
-        return self.graph.future(revs)
-
-    def past(self, revs):
-        return self.graph.past(revs)
 
 
 class MultiDiGraph(networkx.MultiDiGraph, GormGraph):
+    """A version of the networkx.MultiDiGraph class that stores its state in a
+    database.
+
+    """
     def __init__(self, gorm, name, data=None, **attr):
-        self._name = json_dump(name)
-        self.graph = GraphMapping(gorm, name)
-        self.keys = self.graph.keys
-        self.values = self.graph.values
-        self.items = self.graph.items
-        for py2att in ('iterkeys', 'itervalues', 'iteritems'):
-            if hasattr(self.graph, py2att):
-                setattr(self, py2att, getattr(self.graph, py2att))
-        self.node = GraphNodeMapping(gorm, name)
+        """Call ``_init_atts``, instantiate special mappings, convert ``data``
+        argument, and then update graph attributes from kwargs.
+
+        """
+        self._init_atts(gorm, name)
         self.adj = MultiGraphSuccessorsMapping(gorm, name)
         self.pred = MultiDiGraphPredecessorsMapping(gorm, name)
         self.succ = self.adj
         if data is not None:
             networkx.convert.to_networkx_graph(data, create_using=self)
         self.graph.update(attr)
-        self.edge = self.adj
-
-    @property
-    def name(self):
-        return json_load(self._name)
-
-    @name.setter
-    def name(self, v):
-        raise TypeError("gorm graphs can't be renamed")
 
     def remove_edge(self, u, v, key=None):
         """Version of remove_edge that's much like normal networkx but only
@@ -1974,12 +1986,3 @@ class MultiDiGraph(networkx.MultiDiGraph, GormGraph):
             (u, v) = e[:2]
             if u in self.succ and v in self.succ[u]:
                 del self.succ[u][v]
-
-    def window(self, branch, revfrom, revto):
-        return self.graph.window(branch, revfrom, revto)
-
-    def future(self, revs):
-        return self.graph.future(revs)
-
-    def past(self, revs):
-        return self.graph.past(revs)
