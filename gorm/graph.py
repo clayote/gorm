@@ -92,7 +92,7 @@ def window(self, tab, preset_cols, presets, branch, revfrom, revto):
     self.gorm.branch = curbranch
     self.gorm.rev = currev
     self.gorm.cursor.execute(
-        "SELECT key, rev, value, valtype FROM {table} "
+        "SELECT key, rev, value FROM {table} "
         "WHERE {presetqs} AND"
         "branch=? AND "
         "rev>=? AND "
@@ -106,12 +106,12 @@ def window(self, tab, preset_cols, presets, branch, revfrom, revto):
             revto
         )
     )
-    for (key, rev, value, valtype) in self.gorm.cursor.fetchall():
+    for (key, rev, value) in self.gorm.cursor.fetchall():
         l = r[key]
         padlen = len(l) - rev - revfrom
         padval = l[-1]
         l.extend([padval] * padlen)
-        l[rev] = self.gorm.cast(value, valtype)
+        l[rev] = json_load(value)
     return r
 
 
@@ -607,7 +607,7 @@ class GraphNodeMapping(GraphMapping):
                 )
 
         def __delitem__(self, key):
-            """Set the key's valtype to 'unset', indicating it should be ignored
+            """Set the key's value to NULL, indicating it should be ignored
             now and in future revs
 
             """
@@ -1073,7 +1073,7 @@ class GraphEdgeMapping(GraphMapping):
                 )
 
         def __delitem__(self, key):
-            """Set the key's valtype to 'unset', such that it is not yielded by
+            """Set the key's value to NULL, such that it is not yielded by
             ``__iter__``
 
             """
@@ -1796,7 +1796,7 @@ class GormGraph(object):
         """
         self.gorm.cursor.execute(
             "SELECT before.key, before.value, after.value "
-            "FROM (SELECT key, value, valtype FROM graph_val JOIN "
+            "FROM (SELECT key, value FROM graph_val JOIN "
             "(SELECT graph, key, branch, MAX(rev) AS rev "
             "FROM graph_val WHERE "
             "graph=? AND "
@@ -1807,7 +1807,7 @@ class GormGraph(object):
             "AND graph_val.branch=hirev1.branch "
             "AND graph_val.rev=hirev1.rev"
             ") AS before FULL JOIN "
-            "(SELECT key, value, valtype FROM graph_val JOIN "
+            "(SELECT key, value FROM graph_val JOIN "
             "(SELECT graph, key, branch, MAX(rev) AS rev "
             "FROM graph_val WHERE "
             "graph=? AND "
