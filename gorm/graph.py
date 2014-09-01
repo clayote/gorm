@@ -60,6 +60,8 @@ json_load_hints = {}
 
 def json_load(s):
     """JSON loader that distinguishes lists from tuples"""
+    if s is None:
+        return None
     if s not in json_load_hints:
         json_load_hints[s] = dec_tuple(json.loads(s))
     return json_load_hints[s]
@@ -615,13 +617,13 @@ class GraphNodeMapping(GraphMapping):
             try:
                 self.gorm.cursor.execute(
                     "INSERT INTO node_val "
-                    "(graph, node, key, branch, rev, valtype) VALUES "
-                    "(?, ?, ?, ?, 'unset');",
+                    "(graph, node, key, branch, rev, value) VALUES "
+                    "(?, ?, ?, ?, ?, NULL);",
                     (self.graph._name, self._node, k, branch, rev)
                 )
             except IntegrityError:
                 self.gorm.cursor.execute(
-                    "UPDATE node_val SET valtype='unset' WHERE "
+                    "UPDATE node_val SET value=NULL WHERE "
                     "graph=? AND "
                     "node=? AND "
                     "key=? AND "
