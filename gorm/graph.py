@@ -1285,7 +1285,7 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
         if not self.gorm._node_exists(self.graph, nodeA):
             return False
         a = json_dump(nodeA)
-        for (branch, rev) in self.gorm.active_branches():
+        for (branch, rev) in self.gorm._active_branches():
             r = self.gorm.cursor.execute(
                 "SELECT edges.nodeA, edges.extant FROM edges JOIN "
                 "(SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
