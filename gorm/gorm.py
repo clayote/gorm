@@ -21,7 +21,10 @@ class ORM(object):
             'false': '0'
         }
     }
-    """Important data types and values represented for different SQL flavors."""
+    """Important data types and values represented for different SQL
+    flavors.
+
+    """
     def __init__(
             self,
             connector,

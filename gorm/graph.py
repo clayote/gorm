@@ -759,13 +759,6 @@ class GraphEdgeMapping(GraphMapping):
         self.graph = graph
         self.gorm = graph.gorm
 
-    def __iter__(self):
-        """Iterate over the nodes that exist at the moment"""
-        return self.gorm._iternodes(self.graph.name)
-
-    def __contains__(self, node):
-        return self.gorm._node_exists(self.graph.name, node)
-
     def __len__(self):
         """How many nodes do I have at the moment?"""
         return self.gorm._countnodes(self.graph.name)
@@ -1258,6 +1251,62 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
         """Wipe out edges emanating from nodeA"""
         self.Successors(self, nodeA).clear()
 
+    def __iter__(self):
+        """Iterate over nodes that have at least one outgoing edge"""
+        seen = set()
+        for (branch, rev) in self.gorm._active_branches():
+            data = self.gorm.cursor.execute(
+                "SELECT edges.nodeA, edges.extant FROM edges JOIN "
+                "(SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
+                "FROM edges WHERE "
+                "graph=? AND "
+                "branch=? AND "
+                "rev<=? GROUP BY "
+                "graph, nodeA, nodeB, idx, branch) AS hirev ON "
+                "edges.graph=hirev.graph AND "
+                "edges.nodeA=hirev.nodeA AND "
+                "edges.nodeB=hirev.nodeB AND "
+                "edges.idx=hirev.idx AND "
+                "edges.branch=hirev.branch AND "
+                "edges.rev=hirev.rev;",
+                (self.graph._name, branch, rev)
+            ).fetchall()
+            for (a, extant) in data:
+                nodeA = json_load(a)
+                if nodeA not in seen and extant:
+                    yield nodeA
+                seen.add(nodeA)
+
+    def __contains__(self, nodeA):
+        """Does this node exist, and does it have at least one outgoing
+        edge?
+
+        """
+        if not self.gorm._node_exists(self.graph, nodeA):
+            return False
+        a = json_dump(nodeA)
+        for (branch, rev) in self.gorm.active_branches():
+            r = self.gorm.cursor.execute(
+                "SELECT edges.nodeA, edges.extant FROM edges JOIN "
+                "(SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
+                "FROM edges WHERE "
+                "graph=? AND "
+                "nodeA=? AND "
+                "branch=? AND "
+                "rev<=? GROUP BY "
+                "graph, nodeA, nodeB, idx, branch) AS hirev ON "
+                "edges.graph=hirev.graph AND "
+                "edges.nodeA=hirev.nodeA AND "
+                "edges.nodeB=hirev.nodeB AND "
+                "edges.idx=hirev.idx AND "
+                "edges.branch=hirev.branch AND "
+                "edges.rev=hirev.rev;",
+                (self.graph._name, a, branch, rev)
+            ).fetchone()
+            if r is not None:
+                return bool(r[1])
+        return False
+
     class Successors(GraphEdgeMapping):
         @property
         def nodeA(self):
@@ -1401,6 +1450,58 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
     def __delitem__(self, nodeB):
         """Delete all edges ending at ``nodeB``"""
         self.Predecessors(self, nodeB).clear()
+
+    def __iter__(self):
+        """Iterate over nodes with at least one edge leading to them"""
+        seen = set()
+        for (branch, rev) in self.gorm._active_branches():
+            data = self.gorm.cursor.execute(
+                "SELECT edges.nodeB, edges.extant FROM edges JOIN "
+                "(SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
+                "FROM edges WHERE "
+                "graph=? AND "
+                "branch=? AND "
+                "rev<=? GROUP BY "
+                "graph, nodeA, nodeB, idx, branch) AS hirev ON "
+                "edges.graph=hirev.graph AND "
+                "edges.nodeA=hirev.nodeA AND "
+                "edges.nodeB=hirev.nodeB AND "
+                "edges.idx=hirev.idx AND "
+                "edges.branch=hirev.branch AND "
+                "edges.rev=hirev.rev;",
+                (self.graph._name, branch, rev)
+            ).fetchall()
+            for (nodeB, extant) in data:
+                if nodeB not in seen and extant:
+                    yield json_load(nodeB)
+                seen.add(nodeB)
+
+    def __contains__(self, nodeB):
+        """Does the node exist and have at least one edge leading to it?"""
+        if not self.gorm._node_exists(self.graph.name, nodeB):
+            return False
+        b = json_dump(nodeB)
+        for (branch, rev) in self.gorm._active_branches():
+            r = self.gorm.cursor.execute(
+                "SELECT edges.nodeB, edges.extant FROM edges JOIN "
+                "(SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
+                "FROM edges WHERE "
+                "graph=? AND "
+                "nodeB=? AND "
+                "branch=? AND "
+                "rev<=? GROUP BY "
+                "graph, nodeA, nodeB, idx, branch) AS hirev ON "
+                "edges.graph=hirev.graph AND "
+                "edges.nodeA=hirev.nodeA AND "
+                "edges.nodeB=hirev.nodeB AND "
+                "edges.idx=hirev.idx AND "
+                "edges.branch=hirev.branch AND "
+                "edges.rev=hirev.rev;",
+                (self.graph._name, b, branch, rev)
+            ).fetchone()
+            if r is not None:
+                return bool(r[1])
+        return False
 
     class Predecessors(GraphEdgeMapping):
         """Mapping of Edges that end at a particular node"""
