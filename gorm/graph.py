@@ -11,12 +11,9 @@ def enc_tuple(o):
 
     """
     if isinstance(o, tuple):
-        return {
-            'is_tuple': True,
-            'value': [enc_tuple(v) for v in o]
-        }
+        return ['tuple'] + [enc_tuple(p) for p in o]
     elif isinstance(o, list):
-        return [enc_tuple(v) for v in o]
+        return ['list'] + [enc_tuple(v) for v in o]
     elif isinstance(o, dict):
         r = {}
         for (k, v) in o.items():
@@ -32,14 +29,16 @@ def dec_tuple(o):
 
     """
     if isinstance(o, dict):
-        if 'is_tuple' in o:
-            return tuple(dec_tuple(v) for v in o['value'])
         r = {}
         for (k, v) in o.items():
-            r[enc_tuple(k)] = enc_tuple(v)
+            r[dec_tuple(k)] = dec_tuple(v)
         return r
     elif isinstance(o, list):
-        return [dec_tuple(v) for v in o]
+        if o[0] == 'list':
+            return list(dec_tuple(p) for p in o[1:])
+        else:
+            assert(o[0]) == 'tuple'
+            return tuple(dec_tuple(p) for p in o[1:])
     else:
         return o
 
@@ -783,6 +782,9 @@ class GraphEdgeMapping(GraphMapping):
                 return False
         return True
 
+    def __iter__(self):
+        yield from self.gorm._iternodes(self.graph)
+
     class Edge(GraphMapping):
         """Mapping for edge attributes"""
         def __init__(self, graph, nodeA, nodeB, idx=0):
@@ -1274,6 +1276,7 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
             for (a, extant) in data:
                 nodeA = json_load(a)
                 if nodeA not in seen and extant:
+                    assert(nodeA in self)
                     yield nodeA
                 seen.add(nodeA)
 
@@ -1282,8 +1285,6 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
         edge?
 
         """
-        if not self.gorm._node_exists(self.graph, nodeA):
-            return False
         a = json_dump(nodeA)
         for (branch, rev) in self.gorm._active_branches():
             r = self.gorm.cursor.execute(
@@ -1478,8 +1479,6 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
 
     def __contains__(self, nodeB):
         """Does the node exist and have at least one edge leading to it?"""
-        if not self.gorm._node_exists(self.graph.name, nodeB):
-            return False
         b = json_dump(nodeB)
         for (branch, rev) in self.gorm._active_branches():
             r = self.gorm.cursor.execute(
@@ -2017,6 +2016,56 @@ class DiGraph(GormGraph, networkx.DiGraph):
             if u in self.succ and v in self.succ[u]:
                 del self.succ[u][v]
 
+    def add_edge(self, u, v, attr_dict=None, **attr):
+        """Version of add_edge that only writes to the database once"""
+        if attr_dict is None:
+            attr_dict = attr
+        else:
+            try:
+                attr_dict.update(attr)
+            except AttributeError:
+                raise NetworkXError(
+                    "The attr_dict argument must be a dictionary."
+                )
+        datadict = self.adj[u].get(v, {})
+        datadict.update(attr_dict)
+        if u not in self.node:
+            self.node[u] = {}
+        if v not in self.node:
+            self.node[v] = {}
+        self.succ[u][v] = datadict
+
+    def add_edges_from(self, ebunch, attr_dict=None, **attr):
+        """Version of add_edges_from that only writes to the database once"""
+        if attr_dict is None:
+            attr_dict = attr
+        else:
+            try:
+                attr_dict.update(attr)
+            except AttributeError:
+                raise NetworkXError(
+                    "The attr_dict argument must be a dict."
+                )
+        for e in ebunch:
+            ne = len(e)
+            if ne == 3:
+                u, v, dd = e
+                assert hasattr(dd, "update")
+            elif ne == 2:
+                u, v = e
+                dd = {}
+            else:
+                raise NetworkXError(
+                    "Edge tupse {} must be a 2-tuple or 3-tuple.".format(e)
+                )
+            if u not in self.node:
+                self.node[u] = {}
+            if v not in self.node:
+                self.node[v] = {}
+            datadict = self.adj.get(u, {}).get(v, {})
+            datadict.update(attr_dict)
+            datadict.update(dd)
+            self.succ[u][v] = datadict
 
 class MultiGraph(networkx.MultiGraph, GormGraph):
     """A version of the networkx.MultiGraph class that stores its state in a
