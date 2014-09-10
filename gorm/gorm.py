@@ -38,7 +38,8 @@ class ORM(object):
         if sql_flavor not in self.sql_types:
             raise ValueError("Unknown SQL flavor")
         self.sql_flavor = sql_flavor
-        self.cursor = connector.cursor() if hasattr(connector, 'cursor') else connector
+        self.connection = connector
+        self.cursor = self.connection.cursor()
         self._obranch = obranch
         self._orev = orev
         self._branches = {}
@@ -92,13 +93,12 @@ class ORM(object):
                 return True
             lineage.add(oneparent)
             return recurse(self._branches[oneparent][0])
-
         return recurse(child)
-
 
     @property
     def branch(self):
-        """Return the global value ``branch``, or ``self._obranch`` if it's set"""
+        """Return the global value ``branch``, or ``self._obranch`` if it's
+        set"""
         if self._obranch is not None:
             return self._obranch
         self.cursor.execute(
