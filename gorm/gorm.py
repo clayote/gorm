@@ -420,7 +420,8 @@ class ORM(object):
                 "AND nodes.node=hirev.node "
                 "AND nodes.branch=hirev.branch "
                 "AND nodes.rev=hirev.rev "
-                "WHERE nodes.node IS NOT NULL;",
+                "WHERE nodes.node IS NOT NULL "
+                "AND nodes.extant;",
                 (
                     graph,
                     branch,
