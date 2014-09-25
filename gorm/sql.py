@@ -1,12 +1,4 @@
-sql_types = {
-    'sqlite': {
-        'text': 'TEXT',
-        'integer': 'INTEGER',
-        'boolean': 'BOOLEAN',
-        'true': '1',
-        'false': '0'
-    }
-}
+from gorm.json import json_load
 
 
 sql_strings = {
@@ -43,21 +35,21 @@ sql_strings = {
     "UPDATE global SET value=? WHERE key=?;",
     'decl_global':
     "CREATE TABLE global ("
-    "key {text} NOT NULL PRIMARY KEY, "
-    "value {text})"
+    "key TEXT NOT NULL PRIMARY KEY, "
+    "value TEXT)"
     ";",
     'decl_branches':
     "CREATE TABLE branches ("
-    "branch {text} NOT NULL DEFAULT 'master', "
-    "parent {text} NOT NULL DEFAULT 'master', "
-    "parent_rev {integer} NOT NULL DEFAULT 0, "
+    "branch TEXT NOT NULL DEFAULT 'master', "
+    "parent TEXT NOT NULL DEFAULT 'master', "
+    "parent_rev INTEGER NOT NULL DEFAULT 0, "
     "PRIMARY KEY(branch), "
     "FOREIGN KEY(parent) REFERENCES branch(branch)"
     ");",
     'decl_graphs':
     "CREATE TABLE graphs ("
-    "graph {text} NOT NULL, "
-    "type {text} NOT NULL DEFAULT 'Graph', "
+    "graph TEXT NOT NULL, "
+    "type TEXT NOT NULL DEFAULT 'Graph', "
     "PRIMARY KEY(graph), "
     "CHECK(type IN ('Graph', 'DiGraph', 'MultiGraph', 'MultiDiGraph'))"
     ");",
@@ -65,11 +57,11 @@ sql_strings = {
     "INSERT INTO branches DEFAULT VALUES;",
     'decl_graph_val':
     "CREATE TABLE graph_val ("
-    "graph {text} NOT NULL, "
-    "key {text} NOT NULL, "
-    "branch {text} NOT NULL DEFAULT 'master', "
-    "rev {integer} NOT NULL DEFAULT 0, "
-    "value {text}, "
+    "graph TEXT NOT NULL, "
+    "key TEXT NOT NULL, "
+    "branch TEXT NOT NULL DEFAULT 'master', "
+    "rev INTEGER NOT NULL DEFAULT 0, "
+    "value TEXT, "
     "PRIMARY KEY (graph, key, branch, rev), "
     "FOREIGN KEY(graph) REFERENCES graphs(graph), "
     "FOREIGN KEY(branch) REFERENCES branches(branch))"
@@ -79,11 +71,11 @@ sql_strings = {
     ";",
     'decl_nodes':
     "CREATE TABLE nodes ("
-    "graph {text} NOT NULL, "
-    "node {text} NOT NULL, "
-    "branch {text} NOT NULL DEFAULT 'master', "
-    "rev {integer} NOT NULL DEFAULT 0, "
-    "extant {boolean} NOT NULL, "
+    "graph TEXT NOT NULL, "
+    "node TEXT NOT NULL, "
+    "branch TEXT NOT NULL DEFAULT 'master', "
+    "rev INTEGER NOT NULL DEFAULT 0, "
+    "extant BOOLEAN NOT NULL, "
     "PRIMARY KEY (graph, node, branch, rev), "
     "FOREIGN KEY(graph) REFERENCES graphs(graph), "
     "FOREIGN KEY(branch) REFERENCES branches(branch))"
@@ -93,12 +85,12 @@ sql_strings = {
     ";",
     'decl_node_val':
     "CREATE TABLE node_val ("
-    "graph {text} NOT NULL, "
-    "node {text} NOT NULL, "
-    "key {text} NOT NULL, "
-    "branch {text} NOT NULL DEFAULT 'master', "
-    "rev {integer} NOT NULL DEFAULT 0, "
-    "value {text}, "
+    "graph TEXT NOT NULL, "
+    "node TEXT NOT NULL, "
+    "key TEXT NOT NULL, "
+    "branch TEXT NOT NULL DEFAULT 'master', "
+    "rev INTEGER NOT NULL DEFAULT 0, "
+    "value TEXT, "
     "PRIMARY KEY(graph, node, key, branch, rev), "
     "FOREIGN KEY(graph, node) REFERENCES nodes(graph, node), "
     "FOREIGN KEY(branch) REFERENCES branches(branch))"
@@ -108,13 +100,13 @@ sql_strings = {
     ";",
     'decl_edges':
     "CREATE TABLE edges ("
-    "graph {text} NOT NULL, "
-    "nodeA {text} NOT NULL, "
-    "nodeB {text} NOT NULL, "
-    "idx {integer} NOT NULL DEFAULT 0, "
-    "branch {text} NOT NULL DEFAULT 'master', "
-    "rev {integer} NOT NULL DEFAULT 0, "
-    "extant {boolean} NOT NULL, "
+    "graph TEXT NOT NULL, "
+    "nodeA TEXT NOT NULL, "
+    "nodeB TEXT NOT NULL, "
+    "idx INTEGER NOT NULL DEFAULT 0, "
+    "branch TEXT NOT NULL DEFAULT 'master', "
+    "rev INTEGER NOT NULL DEFAULT 0, "
+    "extant BOOLEAN NOT NULL, "
     "PRIMARY KEY (graph, nodeA, nodeB, idx, branch, rev), "
     "FOREIGN KEY(graph, nodeA) REFERENCES nodes(graph, node), "
     "FOREIGN KEY(graph, nodeB) REFERENCES nodes(graph, node), "
@@ -125,14 +117,14 @@ sql_strings = {
     ";",
     'decl_edge_val':
     "CREATE TABLE edge_val ("
-    "graph {text} NOT NULL, "
-    "nodeA {text} NOT NULL, "
-    "nodeB {text} NOT NULL, "
-    "idx {integer} NOT NULL DEFAULT 0, "
-    "key {text}, "
-    "branch {text} NOT NULL DEFAULT 'master', "
-    "rev {integer} NOT NULL DEFAULT 0, "
-    "value {text}, "
+    "graph TEXT NOT NULL, "
+    "nodeA TEXT NOT NULL, "
+    "nodeB TEXT NOT NULL, "
+    "idx INTEGER NOT NULL DEFAULT 0, "
+    "key TEXT, "
+    "branch TEXT NOT NULL DEFAULT 'master', "
+    "rev INTEGER NOT NULL DEFAULT 0, "
+    "value TEXT, "
     "PRIMARY KEY(graph, nodeA, nodeB, idx, key, branch, rev), "
     "FOREIGN KEY(graph, nodeA, nodeB, idx) "
     "REFERENCES edges(graph, nodeA, nodeB, idx), "
@@ -628,7 +620,7 @@ sql_strings = {
 
 
 def get_sql(stringname, flavorname):
-    return sql_strings[stringname].format(**sql_types[flavorname])
+    return sql_strings[stringname]
 
 
 def window(self, tab, preset_cols, presets, branch, revfrom, revto):
