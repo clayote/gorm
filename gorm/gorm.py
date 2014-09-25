@@ -9,18 +9,11 @@ from .graph import (
     json_load
 )
 
+from .sql import get_sql, sql_types
+
 
 class ORM(object):
     """Instantiate this with a database connector to use gorm."""
-    sql_types = {
-        'sqlite': {
-            'text': 'TEXT',
-            'integer': 'INTEGER',
-            'boolean': 'BOOLEAN',
-            'true': '1',
-            'false': '0'
-        }
-    }
     """Important data types and values represented for different SQL
     flavors.
 
@@ -35,7 +28,7 @@ class ORM(object):
     ):
         """Store connector and flags, and open a cursor"""
         self.pickling = pickling
-        if sql_flavor not in self.sql_types:
+        if sql_flavor not in sql_types:
             raise ValueError("Unknown SQL flavor")
         self.sql_flavor = sql_flavor
         self.connection = connector
@@ -43,6 +36,9 @@ class ORM(object):
         self._obranch = obranch
         self._orev = orev
         self._branches = {}
+
+    def sql(self, stringname):
+        return get_sql(stringname, self.sql_flavor)
 
     def __enter__(self):
         """Enable the use of the ``with`` keyword"""
@@ -57,7 +53,7 @@ class ORM(object):
         if b in self._branches:
             return True
         self.cursor.execute(
-            "SELECT count(*) FROM branches WHERE branch=?;",
+            self.sql('ctbranch'),
             (b,)
         )
         return self.cursor.fetchone()[0] == 1
@@ -76,7 +72,7 @@ class ORM(object):
         self._childbranch = {}
         self._ancestry = {}
         for (branch, parent, parent_rev) in self.cursor.execute(
-                "SELECT branch, parent, parent_rev FROM branches;"
+                self.sql('allbranch')
         ).fetchall():
             self._branches[branch] = (parent, parent_rev)
             self._childbranch[parent] = branch
@@ -102,7 +98,7 @@ class ORM(object):
         if self._obranch is not None:
             return self._obranch
         self.cursor.execute(
-            "SELECT value FROM global WHERE key=?;",
+            self.sql('global_key'),
             (
                 json_dump('branch'),
             )
@@ -121,8 +117,7 @@ class ORM(object):
             # assumes the present revision in the parent branch has
             # been finalized.
             self.cursor.execute(
-                "INSERT INTO branches (branch, parent, parent_rev) "
-                "VALUES (?, ?, ?);",
+                self.sql('new_branch'),
                 (json_dump(v), curbranch, currev)
             )
         if v == 'master':
@@ -130,7 +125,7 @@ class ORM(object):
         # make sure I'll end up within the revision range of the
         # destination branch
         self.cursor.execute(
-            "SELECT parent_rev FROM branches WHERE branch=?;",
+            self.sql('parrev'),
             (v,)
         )
         parrev = self.cursor.fetchone()[0]
@@ -153,7 +148,7 @@ class ORM(object):
         if self._orev is not None:
             return self._orev
         self.cursor.execute(
-            "SELECT value FROM global WHERE key=?;",
+            self.sql('global_key'),
             (
                 json_dump('rev'),
             )
@@ -171,7 +166,7 @@ class ORM(object):
         branch = self.branch
         if branch != 'master':
             self.cursor.execute(
-                "SELECT parent, parent_rev FROM branches WHERE branch=?;",
+                self.sql('parparrev'),
                 (json_dump(branch),)
             )
             (parent, parent_rev) = self.cursor.fetchone()
@@ -182,7 +177,7 @@ class ORM(object):
                     "the branch {brnch}".format(revn=v, brnch=branch)
                 )
         self.cursor.execute(
-            "UPDATE global SET value=? WHERE key=?;",
+            self.sql('global_set'),
             (
                 json_dump(v),
                 json_dump('rev')
@@ -206,103 +201,29 @@ class ORM(object):
         cursor at ('master', 0).
 
         """
-        tabdecls = [
-            "CREATE TABLE global ("
-            "key {text} NOT NULL PRIMARY KEY, "
-            "value {text})",
-            ";",
-            "CREATE TABLE branches ("
-            "branch {text} NOT NULL DEFAULT 'master', "
-            "parent {text} NOT NULL DEFAULT 'master', "
-            "parent_rev {integer} NOT NULL DEFAULT 0, "
-            "PRIMARY KEY(branch), "
-            "FOREIGN KEY(parent) REFERENCES branch(branch)"
-            ");",
-            "CREATE TABLE graphs ("
-            "graph {text} NOT NULL, "
-            "type {text} NOT NULL DEFAULT 'Graph', "
-            "PRIMARY KEY(graph), "
-            "CHECK(type IN ('Graph', 'DiGraph', 'MultiGraph', 'MultiDiGraph'))"
-            ");",
-            "INSERT INTO branches DEFAULT VALUES;",
-            "CREATE TABLE graph_val ("
-            "graph {text} NOT NULL, "
-            "key {text} NOT NULL, "
-            "branch {text} NOT NULL DEFAULT 'master', "
-            "rev {integer} NOT NULL DEFAULT 0, "
-            "value {text}, "
-            "PRIMARY KEY (graph, key, branch, rev), "
-            "FOREIGN KEY(graph) REFERENCES graphs(graph), "
-            "FOREIGN KEY(branch) REFERENCES branches(branch))"
-            ";",
-            "CREATE INDEX graph_val_idx ON graph_val(graph, key)"
-            ";",
-            "CREATE TABLE nodes ("
-            "graph {text} NOT NULL, "
-            "node {text} NOT NULL, "
-            "branch {text} NOT NULL DEFAULT 'master', "
-            "rev {integer} NOT NULL DEFAULT 0, "
-            "extant {boolean} NOT NULL, "
-            "PRIMARY KEY (graph, node, branch, rev), "
-            "FOREIGN KEY(graph) REFERENCES graphs(graph), "
-            "FOREIGN KEY(branch) REFERENCES branches(branch))"
-            ";",
-            "CREATE INDEX nodes_idx ON nodes(graph, node)"
-            ";",
-            "CREATE TABLE node_val ("
-            "graph {text} NOT NULL, "
-            "node {text} NOT NULL, "
-            "key {text} NOT NULL, "
-            "branch {text} NOT NULL DEFAULT 'master', "
-            "rev {integer} NOT NULL DEFAULT 0, "
-            "value {text}, "
-            "PRIMARY KEY(graph, node, key, branch, rev), "
-            "FOREIGN KEY(graph, node) REFERENCES nodes(graph, node), "
-            "FOREIGN KEY(branch) REFERENCES branches(branch))"
-            ";",
-            "CREATE INDEX node_val_idx ON node_val(graph, node, key)"
-            ";",
-            "CREATE TABLE edges ("
-            "graph {text} NOT NULL, "
-            "nodeA {text} NOT NULL, "
-            "nodeB {text} NOT NULL, "
-            "idx {integer} NOT NULL DEFAULT 0, "
-            "branch {text} NOT NULL DEFAULT 'master', "
-            "rev {integer} NOT NULL DEFAULT 0, "
-            "extant {boolean} NOT NULL, "
-            "PRIMARY KEY (graph, nodeA, nodeB, idx, branch, rev), "
-            "FOREIGN KEY(graph, nodeA) REFERENCES nodes(graph, node), "
-            "FOREIGN KEY(graph, nodeB) REFERENCES nodes(graph, node), "
-            "FOREIGN KEY(branch) REFERENCES branches(branch))"
-            ";",
-            "CREATE INDEX edges_idx ON edges(graph, nodeA, nodeB, idx)"
-            ";",
-            "CREATE TABLE edge_val ("
-            "graph {text} NOT NULL, "
-            "nodeA {text} NOT NULL, "
-            "nodeB {text} NOT NULL, "
-            "idx {integer} NOT NULL DEFAULT 0, "
-            "key {text}, "
-            "branch {text} NOT NULL DEFAULT 'master', "
-            "rev {integer} NOT NULL DEFAULT 0, "
-            "value {text}, "
-            "PRIMARY KEY(graph, nodeA, nodeB, idx, key, branch, rev), "
-            "FOREIGN KEY(graph, nodeA, nodeB, idx) "
-            "REFERENCES edges(graph, nodeA, nodeB, idx), "
-            "FOREIGN KEY(branch) REFERENCES branches(branch))"
-            ";",
-            "CREATE INDEX edge_val_idx ON edge_val(graph, nodeA, nodeB, idx, key)"
-            ";"
-        ]
-        for decl in tabdecls:
-            s = decl.format(**self.sql_types[self.sql_flavor])
-            self.cursor.execute(s)
+        for decl in (
+                'decl_global',
+                'decl_branches',
+                'decl_graphs',
+                'branches_defaults',
+                'decl_graph_val',
+                'index_graph_val',
+                'decl_nodes',
+                'index_nodes',
+                'decl_node_val',
+                'index_node_val',
+                'decl_edges',
+                'index_edges',
+                'decl_edge_val',
+                'index_edge_val'
+        ):
+            self.cursor.execute(self.sql(decl))
         globs = [
             ("branch", "master"),
             ("rev", 0)
         ]
         self.cursor.executemany(
-            "INSERT INTO global (key, value) VALUES (?, ?);",
+            self.sql('global_ins'),
             (
                 (json_dump(glob[0]), json_dump(glob[1]))
                 for glob in globs
@@ -311,12 +232,12 @@ class ORM(object):
 
     def _init_graph(self, name, type_s='Graph'):
         if self.cursor.execute(
-            "SELECT COUNT(*) FROM graphs WHERE graph=?;",
-            (name,)
+                self.sql('ctgraph'),
+                (name,)
         ).fetchone()[0]:
             raise KeyError("Already have a graph by that name")
         self.cursor.execute(
-            "INSERT INTO graphs (graph, type) VALUES (?, ?);",
+            self.sql('new_graph'),
             (name, type_s)
         )
 
@@ -377,11 +298,11 @@ class ORM(object):
         self.get_graph(name)
         n = json_dump(name)
         for statement in [
-                "DELETE FROM edge_val WHERE graph=?;",
-                "DELETE FROM edges WHERE graph=?;",
-                "DELETE FROM node_val WHERE graph=?;",
-                "DELETE FROM nodes WHERE graph=?;",
-                "DELETE FROM graphs WHERE graph=?;"
+                self.sql('del_edge_val_graph'),
+                self.sql('del_edge_graph'),
+                self.sql('del_node_val_graph'),
+                self.sql('del_node_graph'),
+                self.sql('del_graph')
         ]:
             self.cursor.execute(statement, (n,))
 
@@ -397,7 +318,7 @@ class ORM(object):
         while branch != 'master':
             if branch not in self._branches:
                 self._branches[branch] = self.cursor.execute(
-                    "SELECT parent, parent_rev FROM branches WHERE branch=?;",
+                    self.sql('parparrev'),
                     (branch,)
                 ).fetchone()
             (branch, rev) = self._branches[branch]
@@ -409,19 +330,7 @@ class ORM(object):
         graph = json_dump(graphn)
         for (branch, rev) in self._active_branches():
             data = self.cursor.execute(
-                "SELECT nodes.node "
-                "FROM nodes JOIN ("
-                "SELECT graph, node, branch, MAX(rev) AS rev FROM nodes "
-                "WHERE graph=? "
-                "AND branch=? "
-                "AND rev<=? "
-                "GROUP BY graph, node, branch) AS hirev "
-                "ON nodes.graph=hirev.graph "
-                "AND nodes.node=hirev.node "
-                "AND nodes.branch=hirev.branch "
-                "AND nodes.rev=hirev.rev "
-                "WHERE nodes.node IS NOT NULL "
-                "AND nodes.extant;",
+                self.sql('nodes_extant'),
                 (
                     graph,
                     branch,
@@ -447,17 +356,7 @@ class ORM(object):
         graph = json_dump(graphn)
         for (branch, rev) in self._active_branches():
             self.cursor.execute(
-                "SELECT nodes.extant FROM nodes JOIN ("
-                "SELECT graph, node, branch, MAX(rev) AS rev FROM nodes "
-                "WHERE graph=? "
-                "AND node=? "
-                "AND branch=? "
-                "AND rev<=? "
-                "GROUP BY graph, node, branch) AS hirev "
-                "ON nodes.graph=hirev.graph "
-                "AND nodes.node=hirev.node "
-                "AND nodes.branch=hirev.branch "
-                "AND nodes.rev=hirev.rev;",
+                self.sql('node_exists'),
                 (
                     graph,
                     n,
