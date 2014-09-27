@@ -13,7 +13,7 @@ usage
 =====
 ```
 >>> from gorm import ORM
->>> orm = ORM('sqlite3:///test.db')
+>>> orm = ORM('sqlite:///test.db')
 >>> orm.initdb()  # only necessary the first time you use a particular database
 >>> g = orm.new_graph('test')  # also new_digraph, new_multigraph, new_multidigraph
 >>> g.add_nodes_from(['spam', 'eggs', 'ham'])
@@ -23,9 +23,9 @@ usage
 >>> del g
 >>> orm.close()  # commits changes; if you want to commit changes WITHOUT closing orm, use orm.connection.commit()
 >>> del orm
->>> orm = ORM(connect('test.db'))
+>>> orm = ORM('sqlite:///test.db')
 >>> g = orm.get_graph('test')  # returns whatever graph type you stored by that name
->>> g.edge  # Integer keys are permitted. Strings that contain only numerical characters are not.
+>>> g.edge
 {u'eggs': {u'ham': {}, u'spam': {}}, u'ham': {u'eggs': {}}, u'spam': {u'eggs': {}}}
 >>> import networkx as nx
 >>> red = nx.random_lobster(10,0.9,0.9)
