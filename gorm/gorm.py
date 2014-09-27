@@ -11,9 +11,9 @@ from gorm.graph import (
 
 
 class ORM(object):
-    """Instantiate this with a database connector to use gorm."""
-    """Important data types and values represented for different SQL
-    flavors.
+    """Instantiate this with the same string argument you'd use for a
+    SQLAlchemy ``create_engine`` call. This will be your interface to
+    gorm.
 
     """
     def __init__(
@@ -24,7 +24,10 @@ class ORM(object):
             obranch=None,
             orev=None
     ):
-        """Store connector and flags, and open a cursor"""
+        """Make a SQLAlchemy engine if possible, else a sqlite3 connection. In
+        either case, begin a transaction.
+
+        """
         if alchemy:
             try:
                 from sqlalchemy import create_engine
@@ -55,6 +58,14 @@ class ORM(object):
         self._branches = {}
 
     def sql(self, stringname, *args):
+        """Wrapper for the various prewritten or compiled SQL calls.
+
+        First argument is the name of the query, either a key in
+        ``gorm.sql.sqlite_strings`` or a method name in
+        ``gorm.alchemy.Alchemist``. The rest of the arguments are
+        parameters to the query.
+
+        """
         if hasattr(self, 'alchemist'):
             return getattr(self.alchemist, stringname)(*args)
         else:
