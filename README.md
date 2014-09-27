@@ -13,8 +13,7 @@ usage
 =====
 ```
 >>> from gorm import ORM
->>> from sqlite3 import connect  # will soon support other DBAPI2.0 compatible connections
->>> orm = ORM(connect('test.db'))
+>>> orm = ORM('sqlite3:///test.db')
 >>> orm.initdb()  # only necessary the first time you use a particular database
 >>> g = orm.new_graph('test')  # also new_digraph, new_multigraph, new_multidigraph
 >>> g.add_nodes_from(['spam', 'eggs', 'ham'])
