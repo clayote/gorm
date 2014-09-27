@@ -40,7 +40,7 @@ False
 >>> red.edge == blue.edge
 True
 >>> orm.rev = 0
->>> orm.branch = 'test'    # navigating to a branch for the first time creates that branch,
+>>> orm.branch = 'test'    # navigating to a branch for the first time creates that branch
 >>> orm.rev = 1
 >>> red.edge == blue.edge
 True
