@@ -21,7 +21,7 @@ usage
 >>> g.edge  # strings become unicode because that's the way sqlite3 rolls
 {u'eggs': {u'ham': {}, u'spam': {}}, u'ham': {u'eggs': {}}, u'spam': {u'eggs': {}}}
 >>> del g
->>> orm.close()  # commits changes; if you want to commit changes WITHOUT closing orm, use orm.connection.commit()
+>>> orm.close()
 >>> del orm
 >>> orm = ORM('sqlite:///test.db')
 >>> g = orm.get_graph('test')  # returns whatever graph type you stored by that name
