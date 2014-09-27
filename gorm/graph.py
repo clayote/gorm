@@ -1,8 +1,6 @@
 import networkx
 from networkx.exception import NetworkXError
 from collections import MutableMapping
-from sqlite3 import IntegrityError
-from gorm.sql import window
 from gorm.json import json_dump, json_load
 
 
@@ -17,18 +15,16 @@ class GraphMapping(MutableMapping):
         """Iterate over the keys that are set"""
         seen = set()
         for (branch, rev) in self.gorm._active_branches():
-            data = self.gorm.cursor.execute(
-                self.gorm.sql('graph_val_keys_set'),
-                (
-                    self.graph._name,
-                    branch,
-                    rev
-                )
+            data = self.gorm.sql(
+                'graph_val_keys_set',
+                self.graph._name,
+                branch,
+                rev
             ).fetchall()
             if len(data) == 0:
                 continue
-            for (k, v) in data:
-                if k not in seen and v is not None:
+            for (k,) in data:
+                if k not in seen:
                     yield json_load(k)
                 seen.add(k)
 
@@ -36,14 +32,12 @@ class GraphMapping(MutableMapping):
         """Do I have a value for this key right now?"""
         key = json_dump(k)
         for (branch, rev) in self.gorm._active_branches():
-            data = self.gorm.cursor.execute(
-                self.gorm.sql('graph_val_key_set'),
-                (
-                    self.graph._name,
-                    key,
-                    branch,
-                    rev
-                )
+            data = self.gorm.sql(
+                'graph_val_key_set',
+                self.graph._name,
+                key,
+                branch,
+                rev
             ).fetchall()
             if len(data) == 0:
                 continue
@@ -65,14 +59,12 @@ class GraphMapping(MutableMapping):
         if key == 'graph':
             return dict(self)
         for (branch, rev) in self.gorm._active_branches():
-            results = self.gorm.cursor.execute(
-                self.gorm.sql('graph_val_present_value'),
-                (
-                    self.graph._name,
-                    json_dump(key),
-                    branch,
-                    rev
-                )
+            results = self.gorm.sql(
+                'graph_val_present_value',
+                self.graph._name,
+                json_dump(key),
+                branch,
+                rev
             ).fetchall()
             if len(results) == 0:
                 continue
@@ -91,26 +83,22 @@ class GraphMapping(MutableMapping):
         k = json_dump(key)
         v = json_dump(value)
         try:
-            self.gorm.cursor.execute(
-                self.gorm.sql('graph_val_ins'),
-                (
-                    self.graph._name,
-                    k,
-                    branch,
-                    rev,
-                    v
-                )
+            self.gorm.sql(
+                'graph_val_ins',
+                self.graph._name,
+                k,
+                branch,
+                rev,
+                v
             )
-        except IntegrityError:
-            self.gorm.cursor.execute(
-                self.gorm.sql('graph_val_upd'),
-                (
-                    v,
-                    self.graph._name,
-                    k,
-                    branch,
-                    rev
-                )
+        except:  # hack
+            self.gorm.sql(
+                'graph_val_upd',
+                v,
+                self.graph._name,
+                k,
+                branch,
+                rev
             )
 
     def __delitem__(self, key):
@@ -119,26 +107,22 @@ class GraphMapping(MutableMapping):
         rev = self.gorm.rev
         k = json_dump(key)
         try:
-            self.gorm.cursor.execute(
-                self.gorm.sql('graph_val_insdel'),
-                (
-                    self.graph._name,
-                    k,
-                    branch,
-                    rev,
-                    None
-                )
+            self.gorm.sql(
+                'graph_val_ins',
+                self.graph._name,
+                k,
+                branch,
+                rev,
+                None
             )
-        except IntegrityError:
-            self.gorm.cursor.execute(
-                self.gorm.sql('graph_val_upddel'),
-                (
-                    None,
-                    self.graph._name,
-                    k,
-                    branch,
-                    rev
-                )
+        except:  # hack
+            self.gorm.sql(
+                'graph_val_upd',
+                None,
+                self.graph._name,
+                k,
+                branch,
+                rev
             )
 
     def clear(self):
@@ -150,40 +134,14 @@ class GraphMapping(MutableMapping):
         """Looks like a dictionary."""
         return repr(dict(self))
 
-    def window(self, branch, revfrom, revto):
-        """Return a dict of lists of the values assigned to my keys on each
-        revision from ``revfrom`` to ``revto`` in branch
-        ``branch``.
-
-        """
-        return window(
-            "graph_val",
-            ("graph",),
-            (self.graph._name,),
-            branch,
-            revfrom,
-            revto
-        )
-
-    def future(self, revs):
-        """Return a dict of lists of the values assigned to my keys in the
-        next ``revs`` revisions.
-
-        """
-        rev = self.gorm.rev
-        return self.window(self.gorm.branch, rev, rev + revs)
-
-    def past(self, revs):
-        """Return a dict of lists of the values assigned to my keys in the
-        previous ``revs`` revisions.
-
-        """
-        rev = self.gorm.rev
-        return self.window(self.gorm.branch, rev - revs, rev)
-
     def update(self, other):
         """Version of ``update`` that doesn't clobber the database so much"""
-        for (k, v) in other.items():
+        iteratr = (
+            other.iteritems
+            if hasattr(other, 'iteritems')
+            else other.items
+        )
+        for (k, v) in iteratr():
             if (
                     k not in self or
                     self[k] != v
@@ -199,7 +157,8 @@ class GraphNodeMapping(GraphMapping):
 
     def __iter__(self):
         """Iterate over the names of the nodes"""
-        return self.gorm._iternodes(self.graph.name)
+        for node in self.gorm._iternodes(self.graph.name):
+            yield node
 
     def __contains__(self, node):
         """Return whether the node exists presently"""
@@ -268,36 +227,29 @@ class GraphNodeMapping(GraphMapping):
             branch = self.gorm.branch
             rev = self.gorm.rev
             try:
-                self.gorm.cursor.execute(
-                    self.gorm.sql('exist_node_ins'),
-                    (
-                        self.graph._name,
-                        self._node,
-                        branch,
-                        rev,
-                        v
-                    )
+                self.gorm.sql(
+                    'exist_node_ins',
+                    self.graph._name,
+                    self._node,
+                    branch,
+                    rev,
+                    v
                 )
-            except IntegrityError:
-                self.gorm.cursor.execute(
-                    self.gorm.sql('exist_node_upd'),
-                    (
-                        v,
-                        self.graph._name,
-                        self._node,
-                        branch,
-                        rev
-                    )
+            except:  # hack
+                self.gorm.sql(
+                    'exist_node_upd',
+                    v,
+                    self.graph._name,
+                    self._node,
+                    branch,
+                    rev
                 )
-
-        @property
-        def node(self):
-            return json_load(self._node)
 
         def __init__(self, graph, node):
             """Store name and graph"""
             self.graph = graph
             self.gorm = graph.gorm
+            self.node = node
             self._node = json_dump(node)
 
         def __iter__(self):
@@ -306,14 +258,12 @@ class GraphNodeMapping(GraphMapping):
             """
             seen = set()
             for (branch, rev) in self.gorm._active_branches():
-                data = self.gorm.cursor.execute(
-                    self.gorm.sql('node_val_keys'),
-                    (
-                        self.graph._name,
-                        self._node,
-                        branch,
-                        rev
-                    )
+                data = self.gorm.sql(
+                    'node_val_keys',
+                    self.graph._name,
+                    self._node,
+                    branch,
+                    rev
                 ).fetchall()
                 for (key,) in data:
                     k = json_load(key)
@@ -325,15 +275,13 @@ class GraphNodeMapping(GraphMapping):
             """Does the key have a value at the moment?"""
             key = json_dump(k)
             for (branch, rev) in self.gorm._active_branches():
-                data = self.gorm.cursor.execute(
-                    self.gorm.sql('node_val_vals'),
-                    (
-                        self.graph._name,
-                        self._node,
-                        key,
-                        branch,
-                        rev
-                    )
+                data = self.gorm.sql(
+                    'node_val_get',
+                    self.graph._name,
+                    self._node,
+                    key,
+                    branch,
+                    rev
                 ).fetchall()
                 if len(data) == 0:
                     continue
@@ -347,17 +295,14 @@ class GraphNodeMapping(GraphMapping):
             """Get the value of the key at the present branch and rev"""
             k = json_dump(key)
             for (branch, rev) in self.gorm._active_branches():
-                self.gorm.cursor.execute(
-                    self.gorm.sql('node_val_get_val'),
-                    (
-                        self.graph._name,
-                        self._node,
-                        k,
-                        branch,
-                        rev
-                    )
-                )
-                data = self.gorm.cursor.fetchall()
+                data = self.gorm.sql(
+                    'node_val_get',
+                    self.graph._name,
+                    self._node,
+                    k,
+                    branch,
+                    rev
+                ).fetchall()
                 if len(data) == 0:
                     continue
                 elif len(data) > 1:
@@ -376,28 +321,24 @@ class GraphNodeMapping(GraphMapping):
             k = json_dump(key)
             v = json_dump(value)
             try:
-                self.gorm.cursor.execute(
-                    self.gorm.sql('node_val_set_val_ins'),
-                    (
-                        self.graph._name,
-                        self._node,
-                        k,
-                        branch,
-                        rev,
-                        v
-                    )
+                self.gorm.sql(
+                    'node_val_ins',
+                    self.graph._name,
+                    self._node,
+                    k,
+                    branch,
+                    rev,
+                    v
                 )
-            except IntegrityError:
-                self.gorm.cursor.execute(
-                    self.gorm.sql('node_val_set_val_upd'),
-                    (
-                        v,
-                        self.graph._name,
-                        self._node,
-                        k,
-                        branch,
-                        rev
-                    )
+            except:  # hack
+                self.gorm.sql(
+                    'node_val_upd',
+                    v,
+                    self.graph._name,
+                    self._node,
+                    k,
+                    branch,
+                    rev
                 )
 
         def __delitem__(self, key):
@@ -409,20 +350,23 @@ class GraphNodeMapping(GraphMapping):
             rev = self.gorm.rev
             k = json_dump(key)
             try:
-                self.gorm.cursor.execute(
-                    self.gorm.sql('node_val_del_key_ins'),
-                    (self.graph._name, self._node, k, branch, rev)
+                self.gorm.sql(
+                    'node_val_ins',
+                    self.graph._name,
+                    self._node,
+                    k,
+                    branch,
+                    rev
                 )
-            except IntegrityError:
-                self.gorm.cursor.execute(
-                    self.gorm.sql('node_val_del_key_upd'),
-                    (
-                        self.graph._name,
-                        self._node,
-                        k,
-                        branch,
-                        rev
-                    )
+            except:  # hack
+                self.gorm.sql(
+                    'node_val_upd',
+                    None,
+                    self.graph._name,
+                    self._node,
+                    k,
+                    branch,
+                    rev
                 )
 
         def clear(self):
@@ -439,11 +383,10 @@ class GraphNodeMapping(GraphMapping):
             branch = self.gorm.branch
             rev = self.gorm.rev
             # special case when the tick is right at the beginning of a branch
-            self.gorm.cursor.execute(
-                self.gorm.sql('parparrev'),
-                (branch,)
-            )
-            (parent, parent_rev) = self.engine.cursor.fetchone()
+            (parent, parent_rev) = self.gorm.sql(
+                'parparrev',
+                branch
+            ).fetchone()
             before_branch = parent if parent_rev == rev else branch
             return self.compare(before_branch, rev-1, branch, rev)
 
@@ -455,56 +398,21 @@ class GraphNodeMapping(GraphMapping):
             at ``(after_branch, after_rev)``.
 
             """
-            self.gorm.cursor.execute(
-                self.gorm.sql('node_val_compare'),
-                (
-                    self.graph._name,
-                    self._node,
-                    before_branch,
-                    before_rev,
-                    self.graph._name,
-                    self._node,
-                    after_branch,
-                    after_rev
-                )
-            )
+            data = self.gorm.sql(
+                'node_val_compare',
+                self.graph._name,
+                self._node,
+                before_branch,
+                before_rev,
+                self.graph._name,
+                self._node,
+                after_branch,
+                after_rev
+            ).fetchall()
             r = {}
-            for (key, val0, val1) in self.gorm.cursor.fetchall():
+            for (key, val0, val1) in data:
                 r[json_load(key)] = (json_load(val0), json_load(val1))
             return r
-
-        def window(self, branch, revfrom, revto):
-            """Return a dict of lists of the values assigned to my keys each
-            revision from ``revfrom`` to ``revto`` in the branch
-            ``branch``.
-
-            """
-            return window(
-                "node_val",
-                ("graph", "node"),
-                (json_dump(self.graph.name), self._node),
-                branch,
-                revfrom,
-                revto
-            )
-
-        def future(self, revs):
-            """Return a dict of lists of the values assigned to my keys in each of
-            the next ``revs`` revisions.
-
-            """
-            branch = self.gorm.branch
-            rev = self.gorm.rev
-            return self.window(branch, rev, rev + revs)
-
-        def past(self, revs):
-            """Return a dict of lists of the values assigned to each of my keys in
-            each of the previous ``revs`` revisions.
-
-            """
-            branch = self.gorm.branch
-            rev = self.gorm.rev
-            return self.window(branch, rev - revs, rev)
 
 
 class GraphEdgeMapping(GraphMapping):
@@ -570,18 +478,15 @@ class GraphEdgeMapping(GraphMapping):
         @property
         def exists(self):
             for (branch, rev) in self.gorm._active_branches():
-                self.gorm.cursor.execute(
-                    self.gorm.sql('edge_extant'),
-                    (
-                        json_dump(self.graph.name),
-                        self._nodeA,
-                        self._nodeB,
-                        self.idx,
-                        branch,
-                        rev
-                    )
-                )
-                data = self.gorm.cursor.fetchall()
+                data = self.gorm.sql(
+                    'edge_extant',
+                    self.graph._name,
+                    self._nodeA,
+                    self._nodeB,
+                    self.idx,
+                    branch,
+                    rev
+                ).fetchall()
                 if len(data) == 0:
                     continue
                 elif len(data) > 1:
@@ -597,68 +502,59 @@ class GraphEdgeMapping(GraphMapping):
             branch = self.gorm.branch
             rev = self.gorm.rev
             try:
-                self.gorm.cursor.execute(
-                    self.gorm.sql('edge_exist_ins'),
-                    (
-                        self.graph._name,
-                        self._nodeA,
-                        self._nodeB,
-                        self.idx,
-                        branch,
-                        rev,
-                        v
-                    )
+                self.gorm.sql(
+                    'edge_exist_ins',
+                    self.graph._name,
+                    self._nodeA,
+                    self._nodeB,
+                    self.idx,
+                    branch,
+                    rev,
+                    v
                 )
-            except IntegrityError:
-                self.gorm.cursor.execute(
-                    self.gorm.sql('edge_exist_upd'),
-                    (
-                        v,
-                        self.graph._name,
-                        self._nodeA,
-                        self._nodeB,
-                        self.idx,
-                        branch,
-                        rev
-                    )
+            except:  # hack
+                self.gorm.sql(
+                    'edge_exist_upd',
+                    v,
+                    self.graph._name,
+                    self._nodeA,
+                    self._nodeB,
+                    self.idx,
+                    branch,
+                    rev
                 )
 
         def __iter__(self):
             """Yield those keys that have a value"""
             seen = set()
             for (branch, rev) in self.gorm._active_branches():
-                self.gorm.cursor.execute(
-                    self.gorm.sql('edge_val_keys'),
-                    (
-                        self.graph._name,
-                        self._nodeA,
-                        self._nodeB,
-                        self.idx,
-                        branch,
-                        rev
-                    )
-                )
-                for (key,) in self.gorm.cursor.fetchall():
-                    k = json_load(key)
-                    if k not in seen:
-                        yield k
-                    seen.add(k)
+                data = self.gorm.sql(
+                    'edge_val_keys',
+                    self.graph._name,
+                    self._nodeA,
+                    self._nodeB,
+                    self.idx,
+                    branch,
+                    rev
+                ).fetchall()
+                for (key,) in data:
+                    if key not in seen:
+                        yield json_load(key)
+                    seen.add(key)
 
         def __contains__(self, k):
             """Does this key have a value at the moment?"""
             key = json_dump(k)
             for (branch, rev) in self.gorm._active_branches():
-                data = self.gorm.cursor.execute(
-                    self.gorm.sql('edge_val_contains'),
-                    (
-                        self.graph._name,
-                        self._nodeA,
-                        self._nodeB,
-                        self.idx,
-                        key,
-                        branch,
-                        rev
-                    )
+                data = self.gorm.sql(
+                    'edge_val_get',
+                    self.graph._name,
+                    self._nodeA,
+                    self._nodeB,
+                    self.idx,
+                    key,
+                    branch,
+                    rev
                 ).fetchall()
                 if len(data) == 0:
                     continue
@@ -672,19 +568,16 @@ class GraphEdgeMapping(GraphMapping):
             """
             k = json_dump(key)
             for (branch, rev) in self.gorm._active_branches():
-                self.gorm.cursor.execute(
-                    self.gorm.sql('edge_val_get'),
-                    (
-                        self.graph._name,
-                        self._nodeA,
-                        self._nodeB,
-                        self.idx,
-                        k,
-                        branch,
-                        rev
-                    )
-                )
-                data = self.gorm.cursor.fetchall()
+                data = self.gorm.sql(
+                    'edge_val_get',
+                    self.graph._name,
+                    self._nodeA,
+                    self._nodeB,
+                    self.idx,
+                    k,
+                    branch,
+                    rev
+                ).fetchall()
                 if len(data) == 0:
                     continue
                 elif len(data) > 1:
@@ -703,32 +596,28 @@ class GraphEdgeMapping(GraphMapping):
             k = json_dump(key)
             v = json_dump(value)
             try:
-                self.gorm.cursor.execute(
-                    self.gorm.sql('edge_val_set_ins'),
-                    (
-                        self.graph._name,
-                        self._nodeA,
-                        self._nodeB,
-                        self.idx,
-                        k,
-                        branch,
-                        rev,
-                        v
-                    )
+                self.gorm.sql(
+                    'edge_val_ins',
+                    self.graph._name,
+                    self._nodeA,
+                    self._nodeB,
+                    self.idx,
+                    k,
+                    branch,
+                    rev,
+                    v
                 )
-            except IntegrityError:
-                self.gorm.cursor.execute(
-                    self.gorm.sql('edge_val_set_upd'),
-                    (
-                        v,
-                        self.graph._name,
-                        self._nodeA,
-                        self._nodeB,
-                        self.idx,
-                        k,
-                        branch,
-                        rev
-                    )
+            except:  # hack
+                self.gorm.sql(
+                    'edge_val_upd',
+                    v,
+                    self.graph._name,
+                    self._nodeA,
+                    self._nodeB,
+                    self.idx,
+                    k,
+                    branch,
+                    rev
                 )
 
         def __delitem__(self, key):
@@ -740,32 +629,28 @@ class GraphEdgeMapping(GraphMapping):
             rev = self.gorm.rev
             k = json_dump(key)
             try:
-                self.gorm.cursor.execute(
-                    self.gorm.sql('edge_val_del_ins'),
-                    (
-                        self.graph._name,
-                        self._nodeA,
-                        self._nodeB,
-                        self.idx,
-                        k,
-                        branch,
-                        rev,
-                        None
-                    )
+                self.gorm.sql(
+                    'edge_val_ins',
+                    self.graph._name,
+                    self._nodeA,
+                    self._nodeB,
+                    self.idx,
+                    k,
+                    branch,
+                    rev,
+                    None
                 )
-            except IntegrityError:
-                self.gorm.cursor.execute(
-                    self.gorm.sql('edge_val_del_upd'),
-                    (
-                        None,
-                        self.graph._name,
-                        self._nodeA,
-                        self._nodeB,
-                        self.idx,
-                        k,
-                        branch,
-                        rev
-                    )
+            except:  # hack
+                self.gorm.sql(
+                    'edge_val_upd',
+                    None,
+                    self.graph._name,
+                    self._nodeA,
+                    self._nodeB,
+                    self.idx,
+                    k,
+                    branch,
+                    rev
                 )
 
         def clear(self):
@@ -775,23 +660,25 @@ class GraphEdgeMapping(GraphMapping):
             self.exists = False
 
         def compare(self, branch_before, rev_before, branch_after, rev_after):
-            self.gorm.cursor.execute(
-                self.gorm.sql('edge_val_compare'),
-                (
-                    self.graph._name,
-                    self._nodeA,
-                    self._nodeB,
-                    self.idx,
-                    branch_before,
-                    rev_before,
-                    self.graph._name,
-                    self._nodeA,
-                    self._nodeB,
-                    self.idx,
-                    branch_after,
-                    rev_after
-                )
-            )
+            data = self.gorm.sql(
+                'edge_val_compare',
+                self.graph._name,
+                self._nodeA,
+                self._nodeB,
+                self.idx,
+                branch_before,
+                rev_before,
+                self.graph._name,
+                self._nodeA,
+                self._nodeB,
+                self.idx,
+                branch_after,
+                rev_after
+            ).fetchall()
+            r = {}
+            for (key, val0, val1) in data:
+                r[json_load(key)] = (json_load(val0), json_load(val1))
+            return r
 
         def changes(self):
             """Return a dictionary describing changes in my stats between the
@@ -800,43 +687,12 @@ class GraphEdgeMapping(GraphMapping):
             """
             branch = self.gorm.branch
             rev = self.gorm.rev
-            self.gorm.cursor.execute(
-                self.gorm.sql('parparrev'),
-                (branch,)
-            )
-            (parent, parent_rev) = self.gorm.cursor.fetchone()
+            (parent, parent_rev) = self.gorm.sql(
+                'parparrev',
+                branch
+            ).fetchone()
             before_branch = parent if rev == parent_rev else branch
             return self.compare(before_branch, rev-1, branch, rev)
-
-        def window(self, branch, revfrom, revto):
-            """Return a dict of lists of the values assigned to my keys each
-            revision from ``revfrom`` to ``revto`` in the branch ``branch``.
-
-            """
-            return window(
-                "edge_vals",
-                ("graph", "nodeA", "nodeB", "idx"),
-                (self.graph._name, self._nodeA, self._nodeB, self.idx),
-                branch,
-                revfrom,
-                revto
-            )
-
-        def future(self, revs):
-            """Return a dict of lists of the values assigned to my keys in each of
-            the next ``revs`` revisions.
-
-            """
-            rev = self.gorm.rev
-            return self.window(self.gorm.branch, rev, rev + revs)
-
-        def past(self, revs):
-            """Return a dict of lists of the values assigned to each of my keys in
-            each of the previous ``revs`` revisions.
-
-            """
-            rev = self.gorm.rev
-            return self.window(self.gorm.branch, rev - revs, rev)
 
 
 class GraphSuccessorsMapping(GraphEdgeMapping):
@@ -864,9 +720,11 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
         """Iterate over nodes that have at least one outgoing edge"""
         seen = set()
         for (branch, rev) in self.gorm._active_branches():
-            data = self.gorm.cursor.execute(
-                self.gorm.sql('edgeiter'),
-                (self.graph._name, branch, rev)
+            data = self.gorm.sql(
+                'edgeiter',
+                self.graph._name,
+                branch,
+                rev
             ).fetchall()
             for (a, extant) in data:
                 nodeA = json_load(a)
@@ -881,9 +739,12 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
         """
         a = json_dump(nodeA)
         for (branch, rev) in self.gorm._active_branches():
-            r = self.gorm.cursor.execute(
-                self.gorm.sql('nodeBiter'),
-                (self.graph._name, a, branch, rev)
+            r = self.gorm.sql(
+                'nodeBiter',
+                self.graph._name,
+                a,
+                branch,
+                rev
             ).fetchone()
             if r is not None:
                 return bool(r[1])
@@ -909,16 +770,14 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
             """Iterate over node IDs that have an edge with my nodeA"""
             seen = set()
             for (branch, rev) in self.gorm._active_branches():
-                self.gorm.cursor.execute(
-                    self.gorm.sql('nodeBiter'),
-                    (
-                        self.graph._name,
-                        self._nodeA,
-                        branch,
-                        rev
-                    )
-                )
-                for row in self.gorm.cursor.fetchall():
+                data = self.gorm.sql(
+                    'nodeBiter',
+                    self.graph._name,
+                    self._nodeA,
+                    branch,
+                    rev
+                ).fetchall()
+                for row in data:
                     nodeB = json_load(row[0])
                     extant = bool(row[1])
                     if nodeB not in seen and extant:
@@ -929,15 +788,13 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
             """Is there an edge leading to ``nodeB`` at the moment?"""
             b = json_dump(nodeB)
             for (branch, rev) in self.gorm._active_branches():
-                data = self.gorm.cursor.execute(
-                    self.gorm.sql('nodeBiter'),
-                    (
-                        self.graph._name,
-                        self._nodeA,
-                        b,
-                        branch,
-                        rev
-                    )
+                data = self.gorm.sql(
+                    'nodeBiter',
+                    self.graph._name,
+                    self._nodeA,
+                    b,
+                    branch,
+                    rev
                 ).fetchall()
                 r = [bool(row[1]) for row in data]
                 if len(r) > 0:
@@ -1009,9 +866,11 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
         """Iterate over nodes with at least one edge leading to them"""
         seen = set()
         for (branch, rev) in self.gorm._active_branches():
-            data = self.gorm.cursor.execute(
-                self.gorm.sql('nodeBiter'),
-                (self.graph._name, branch, rev)
+            data = self.gorm.sql(
+                'nodeBiter',
+                self.graph._name,
+                branch,
+                rev
             ).fetchall()
             for (nodeB, extant) in data:
                 if nodeB not in seen and extant:
@@ -1022,9 +881,12 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
         """Does the node exist and have at least one edge leading to it?"""
         b = json_dump(nodeB)
         for (branch, rev) in self.gorm._active_branches():
-            r = self.gorm.cursor.execute(
-                self.gorm.sql('nodeBiter'),
-                (self.graph._name, b, branch, rev)
+            r = self.gorm.sql(
+                'nodeBiter',
+                self.graph._name,
+                b,
+                branch,
+                rev
             ).fetchone()
             if r is not None:
                 return bool(r[1])
@@ -1053,16 +915,14 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
             """
             seen = set()
             for (branch, rev) in self.gorm._active_branches():
-                self.gorm.cursor.execute(
-                    self.gorm.sql('nodeAiter'),
-                    (
-                        self.graph._name,
-                        self._nodeB,
-                        branch,
-                        rev
-                    )
-                )
-                for row in self.gorm.cursor.fetchall():
+                data = self.gorm.sql(
+                    'nodeAiter',
+                    self.graph._name,
+                    self._nodeB,
+                    branch,
+                    rev
+                ).fetchall()
+                for row in data:
                     nodeA = row[0]
                     extant = bool(row[1])
                     if nodeA not in seen and extant:
@@ -1073,15 +933,13 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
             """Is there an edge from ``nodeA`` at the moment?"""
             a = json_dump(nodeA)
             for (branch, rev) in self.gorm._active_branches():
-                data = self.gorm.cursor.execute(
-                    self.gorm.sql('edge_exists'),
-                    (
-                        self.graph._name,
-                        a,
-                        self._nodeB,
-                        branch,
-                        rev
-                    )
+                data = self.gorm.sql(
+                    'edge_exists',
+                    self.graph._name,
+                    a,
+                    self._nodeB,
+                    branch,
+                    rev
                 ).fetchall()
                 r = [bool(row[0]) for row in data]
                 if len(r) > 0:
@@ -1140,16 +998,14 @@ class MultiEdges(GraphEdgeMapping):
     def __iter__(self):
         seen = set()
         for (branch, rev) in self.gorm._active_branches():
-            data = self.gorm.cursor.execute(
-                self.gorm.sql('multi_edges_iter'),
-                (
-                    self.graph._name,
-                    self._nodeA,
-                    self._nodeB,
-                    branch,
-                    rev
-                )
-            )
+            data = self.gorm.sql(
+                'multi_edges_iter',
+                self.graph._name,
+                self._nodeA,
+                self._nodeB,
+                branch,
+                rev
+            ).fetchall()
             for (idx, extant) in data:
                 if idx not in seen:
                     if extant:
@@ -1261,9 +1117,6 @@ class GormGraph(object):
         self._name = json_dump(name)
         self.gorm = gorm
         self.graph = GraphMapping(self)
-        self.window = self.graph.window
-        self.future = self.graph.future
-        self.past = self.graph.past
         self.node = GraphNodeMapping(self)
 
     @property
@@ -1284,11 +1137,7 @@ class GormGraph(object):
         """
         branch = self.gorm.branch
         rev = self.gorm.rev
-        self.gorm.cursor.execute(
-            "SELECT parent, parent_rev FROM branches WHERE branch=?;",
-            (branch,)
-        )
-        (parent, parent_rev) = self.engine.cursor.fetchone()
+        (parent, parent_rev) = self.gorm.sql('parparrev', branch).fetchone()
         before_branch = parent if parent_rev == rev else branch
         return (before_branch, rev-1, branch, rev)
 
@@ -1372,19 +1221,17 @@ class GormGraph(object):
         revisions.
 
         """
-        self.gorm.cursor.execute(
-            self.gorm.sql('graph_compare'),
-            (
-                self._name,
-                branch_before,
-                rev_before,
-                self._name,
-                branch_after,
-                rev_after
-            )
-        )
+        data = self.gorm.sql(
+            'graph_compare',
+            self._name,
+            branch_before,
+            rev_before,
+            self._name,
+            branch_after,
+            rev_after
+        ).fetchall()
         r = {}
-        for (key, val0, val1) in self.gorm.cursor.fetchall():
+        for (key, val0, val1) in data:
             if val0 != val1:
                 r[key] = (json_load(val0), json_load(val1))
         return r

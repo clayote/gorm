@@ -1,6 +1,6 @@
 # This file is part of gorm, an object relational mapper for versioned graphs.
 # Copyright (C) 2014 Zachary Spector.
-from .graph import (
+from gorm.graph import (
     Graph,
     DiGraph,
     MultiGraph,
@@ -8,8 +8,6 @@ from .graph import (
     json_dump,
     json_load
 )
-
-from .sql import get_sql, sql_types
 
 
 class ORM(object):
@@ -20,25 +18,47 @@ class ORM(object):
     """
     def __init__(
             self,
-            connector,
-            sql_flavor='sqlite',
-            pickling=False,
+            dbstring,
+            alchemy=True,
+            connect_args={},
             obranch=None,
             orev=None
     ):
         """Store connector and flags, and open a cursor"""
-        self.pickling = pickling
-        if sql_flavor not in sql_types:
-            raise ValueError("Unknown SQL flavor")
-        self.sql_flavor = sql_flavor
-        self.connection = connector
-        self.cursor = self.connection.cursor()
+        if alchemy:
+            try:
+                from sqlalchemy import create_engine
+                from gorm.alchemy import Alchemist
+                self.alchemist = Alchemist(
+                    create_engine(dbstring, connect_args=connect_args)
+                )
+                self.engine = self.alchemist.engine
+                self.alchemy_conn = self.alchemist.conn
+                self.transaction = self.alchemy_conn.begin()
+                self.cursor = self.alchemy_conn
+            except ImportError:
+                from sqlite3 import connect
+                from gorm.sql import sqlite_strings
+                self.connection = connect(dbstring.lstrip('sqlite:///'))
+                self.strings = sqlite_strings
+                self.cursor = self.connection.cursor()
+                self.cursor.execute('BEGIN;')
+        else:
+            from sqlite3 import connect
+            from gorm.sql import sqlite_strings
+            self.connection = connect(dbstring.lstrip('sqlite:///'))
+            self.strings = sqlite_strings
+            self.cursor = self.connection.cursor()
+            self.cursor.execute('BEGIN;')
         self._obranch = obranch
         self._orev = orev
         self._branches = {}
 
-    def sql(self, stringname):
-        return get_sql(stringname, self.sql_flavor)
+    def sql(self, stringname, *args):
+        if hasattr(self, 'alchemist'):
+            return getattr(self.alchemist, stringname)(*args)
+        else:
+            return self.cursor.execute(self.strings[stringname], args)
 
     def __enter__(self):
         """Enable the use of the ``with`` keyword"""
@@ -52,11 +72,7 @@ class ORM(object):
         """Private use. Checks that the branch is known about."""
         if b in self._branches:
             return True
-        self.cursor.execute(
-            self.sql('ctbranch'),
-            (b,)
-        )
-        return self.cursor.fetchone()[0] == 1
+        return self.sql('ctbranch', b).fetchone()[0] == 1
 
     def is_parent_of(self, parent, child):
         """Return whether ``child`` is a branch descended from ``parent`` at
@@ -71,9 +87,7 @@ class ORM(object):
         # I will be recursing a lot so just cache all the branch info
         self._childbranch = {}
         self._ancestry = {}
-        for (branch, parent, parent_rev) in self.cursor.execute(
-                self.sql('allbranch')
-        ).fetchall():
+        for (branch, parent, parent_rev) in self.sql('allbranch').fetchall():
             self._branches[branch] = (parent, parent_rev)
             self._childbranch[parent] = branch
 
@@ -97,13 +111,7 @@ class ORM(object):
         set"""
         if self._obranch is not None:
             return self._obranch
-        self.cursor.execute(
-            self.sql('global_key'),
-            (
-                json_dump('branch'),
-            )
-        )
-        return json_load(self.cursor.fetchone()[0])
+        return self.sql('global_key', 'branch').fetchone()[0]
 
     @branch.setter
     def branch(self, v):
@@ -116,19 +124,17 @@ class ORM(object):
         if not self._havebranch(v):
             # assumes the present revision in the parent branch has
             # been finalized.
-            self.cursor.execute(
-                self.sql('new_branch'),
-                (json_dump(v), curbranch, currev)
+            self.sql(
+                'new_branch',
+                v,
+                curbranch,
+                currev
             )
         if v == 'master':
             return
         # make sure I'll end up within the revision range of the
         # destination branch
-        self.cursor.execute(
-            self.sql('parrev'),
-            (v,)
-        )
-        parrev = self.cursor.fetchone()[0]
+        parrev = self.sql('parrev', v).fetchone()[0]
         if currev < parrev:
             raise ValueError(
                 "Tried to jump to branch {br}, which starts at revision {rv}. "
@@ -137,23 +143,14 @@ class ORM(object):
                     rv=currev
                 )
             )
-        self.cursor.execute(
-            "UPDATE global SET value=? WHERE key='branch';",
-            (json_dump(v),)
-        )
+        self.sql('global_set', v, 'branch')
 
     @property
     def rev(self):
         """Return the global value ``rev``, or ``self._orev`` if that's set"""
         if self._orev is not None:
             return self._orev
-        self.cursor.execute(
-            self.sql('global_key'),
-            (
-                json_dump('rev'),
-            )
-        )
-        return json_load(self.cursor.fetchone()[0])
+        return json_load(self.sql('global_key', 'rev').fetchone()[0])
 
     @rev.setter
     def rev(self, v):
@@ -165,23 +162,17 @@ class ORM(object):
         # first make sure the cursor is not before the start of this branch
         branch = self.branch
         if branch != 'master':
-            self.cursor.execute(
-                self.sql('parparrev'),
-                (json_dump(branch),)
-            )
-            (parent, parent_rev) = self.cursor.fetchone()
+            (parent, parent_rev) = self.sql('parparrev', branch).fetchone()
             if v < int(parent_rev):
                 raise ValueError(
                     "The revision number {revn} "
                     "occurs before the start of "
                     "the branch {brnch}".format(revn=v, brnch=branch)
                 )
-        self.cursor.execute(
-            self.sql('global_set'),
-            (
-                json_dump(v),
-                json_dump('rev')
-            )
+        self.sql(
+            'global_set',
+            json_dump(v),
+            'rev'
         )
         assert(self.rev == v)
 
@@ -193,52 +184,76 @@ class ORM(object):
 
         """
         # maybe these should be in the opposite order?
-        self.connection.commit()
-        self.cursor.close()
+        if hasattr(self, 'transaction'):
+            self.transaction.commit()
+        if hasattr(self, 'connection'):
+            self.connection.commit()
+        if hasattr(self, 'cursor'):
+            self.cursor.close()
 
     def initdb(self):
         """Create the database schema that I use, and put the (branch, rev)
         cursor at ('master', 0).
 
         """
-        for decl in (
-                'decl_global',
-                'decl_branches',
-                'decl_graphs',
-                'branches_defaults',
-                'decl_graph_val',
-                'index_graph_val',
-                'decl_nodes',
-                'index_nodes',
-                'decl_node_val',
-                'index_node_val',
-                'decl_edges',
-                'index_edges',
-                'decl_edge_val',
-                'index_edge_val'
-        ):
-            self.cursor.execute(self.sql(decl))
-        globs = [
-            ("branch", "master"),
-            ("rev", 0)
-        ]
-        self.cursor.executemany(
-            self.sql('global_ins'),
-            (
-                (json_dump(glob[0]), json_dump(glob[1]))
-                for glob in globs
-            )
-        )
+        if hasattr(self, 'alchemy_conn'):
+            from gorm.alchemy import meta
+            meta.create_all(self.engine)
+            if self.sql('global_key', 'branch').fetchone() is None:
+                self.sql('global_ins', 'branch', 'master')
+            if self.sql('global_key', 'rev').fetchone() is None:
+                self.sql('global_ins', 'rev', json_dump(0))
+            return
+        from sqlite3 import OperationalError
+        try:
+            self.cursor.execute('SELECT * FROM global;')
+        except OperationalError:
+            self.sql('decl_global')
+            self.sql('global_ins', 'branch', 'master')
+            self.sql('global_ins', 'rev', json_dump(0))
+        try:
+            self.cursor.execute('SELECT * FROM branches;')
+        except OperationalError:
+            self.sql('decl_branches')
+            self.sql('branches_defaults')
+        try:
+            self.cursor.execute('SELECT * FROM graphs;')
+        except OperationalError:
+            self.sql('decl_graphs')
+        try:
+            self.cursor.execute('SELECT * FROM graph_val;')
+        except OperationalError:
+            self.sql('decl_graph_val')
+            self.sql('index_graph_val')
+        try:
+            self.cursor.execute('SELECT * FROM nodes;')
+        except OperationalError:
+            self.sql('decl_nodes')
+            self.sql('index_nodes')
+        try:
+            self.cursor.execute('SELECT * FROM node_val;')
+        except OperationalError:
+            self.sql('decl_node_val')
+            self.sql('index_node_val')
+        try:
+            self.cursor.execute('SELECT * FROM edges;')
+        except OperationalError:
+            self.sql('decl_edges')
+            self.sql('index_edges')
+        try:
+            self.cursor.execute('SELECT * FROM edge_val;')
+        except OperationalError:
+            self.sql('decl_edge_val')
+            self.sql('index_edge_val')
 
     def _init_graph(self, name, type_s='Graph'):
-        if self.cursor.execute(
-                self.sql('ctgraph'),
-                (name,)
-        ).fetchone()[0]:
+        n = json_dump(name)
+        if self.sql('ctgraph', n).fetchone()[0] > 0:
             raise KeyError("Already have a graph by that name")
-        self.cursor.execute(
-            self.sql('new_graph'),
-            (name, type_s)
+        self.sql(
+            'new_graph',
+            n,
+            type_s
         )
 
     def new_graph(self, name, data=None, **attr):
@@ -246,7 +261,7 @@ class ORM(object):
         data if provided.
 
         """
-        self._init_graph(json_dump(name), 'Graph')
+        self._init_graph(name, 'Graph')
         return Graph(self, name, data, **attr)
 
     def new_digraph(self, name, data=None, **attr):
@@ -254,7 +269,7 @@ class ORM(object):
         data if provided.
 
         """
-        self._init_graph(json_dump(name), 'DiGraph')
+        self._init_graph(name, 'DiGraph')
         return DiGraph(self, name, data, **attr)
 
     def new_multigraph(self, name, data=None, **attr):
@@ -262,7 +277,7 @@ class ORM(object):
         data if provided.
 
         """
-        self._init_graph(json_dump(name), 'MultiGraph')
+        self._init_graph(name, 'MultiGraph')
         return MultiGraph(self, name, data, **attr)
 
     def new_multidigraph(self, name, data=None, **attr):
@@ -271,7 +286,7 @@ class ORM(object):
 
         """
         self._init_graph(name, 'MultiDiGraph')
-        return MultiDiGraph(self, json_dump(name), data, **attr)
+        return MultiDiGraph(self, name, data, **attr)
 
     def get_graph(self, name):
         """Return a graph previously created with ``new_graph``,
@@ -280,9 +295,8 @@ class ORM(object):
 
         """
         n = json_dump(name)
-        self.cursor.execute("SELECT type FROM graphs WHERE graph=?;", (n,))
         try:
-            (type_s,) = self.cursor.fetchone()
+            (type_s,) = self.sql('global_key', n).fetchone()
         except TypeError:
             raise ValueError("I don't know of a graph named {}".format(n))
         return {
@@ -297,14 +311,11 @@ class ORM(object):
         # make sure the graph exists before deleting anything
         self.get_graph(name)
         n = json_dump(name)
-        for statement in [
-                self.sql('del_edge_val_graph'),
-                self.sql('del_edge_graph'),
-                self.sql('del_node_val_graph'),
-                self.sql('del_node_graph'),
-                self.sql('del_graph')
-        ]:
-            self.cursor.execute(statement, (n,))
+        self.sql('del_edge_val_graph', n)
+        self.sql('del_edge_graph', n)
+        self.sql('del_node_val_graph', n)
+        self.sql('del_node_graph', n)
+        self.sql('del_graph', n)
 
     def _active_branches(self):
         """Private use. Iterate over (branch, rev) pairs, where the branch is
@@ -317,10 +328,11 @@ class ORM(object):
         yield (branch, rev)
         while branch != 'master':
             if branch not in self._branches:
-                self._branches[branch] = self.cursor.execute(
-                    self.sql('parparrev'),
-                    (branch,)
+                (b, t) = self.sql(
+                    'parparrev',
+                    branch
                 ).fetchone()
+                self._branches[branch] = (b, json_load(t))
             (branch, rev) = self._branches[branch]
             yield (branch, rev)
 
@@ -329,13 +341,11 @@ class ORM(object):
         seen = set()
         graph = json_dump(graphn)
         for (branch, rev) in self._active_branches():
-            data = self.cursor.execute(
-                self.sql('nodes_extant'),
-                (
-                    graph,
-                    branch,
-                    rev
-                )
+            data = self.sql(
+                'nodes_extant',
+                graph,
+                branch,
+                rev
             ).fetchall()
             for row in data:
                 node = json_load(row[0])
@@ -355,16 +365,13 @@ class ORM(object):
         n = json_dump(node)
         graph = json_dump(graphn)
         for (branch, rev) in self._active_branches():
-            self.cursor.execute(
-                self.sql('node_exists'),
-                (
-                    graph,
-                    n,
-                    branch,
-                    rev
-                )
-            )
-            data = self.cursor.fetchall()
+            data = self.sql(
+                'node_exists',
+                graph,
+                n,
+                branch,
+                rev
+            ).fetchall()
             if len(data) == 0:
                 continue
             elif len(data) > 1:

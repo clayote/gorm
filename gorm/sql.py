@@ -1,7 +1,7 @@
 from gorm.json import json_load
 
 
-sql_strings = {
+sqlite_strings = {
     'ctbranch':
     "SELECT COUNT(*) FROM branches WHERE branch=?;",
     'ctgraph':
@@ -44,7 +44,7 @@ sql_strings = {
     "parent TEXT NOT NULL DEFAULT 'master', "
     "parent_rev INTEGER NOT NULL DEFAULT 0, "
     "PRIMARY KEY(branch), "
-    "FOREIGN KEY(parent) REFERENCES branch(branch)"
+    "FOREIGN KEY(parent) REFERENCES branches(branch)"
     ");",
     'decl_graphs':
     "CREATE TABLE graphs ("
@@ -160,7 +160,7 @@ sql_strings = {
     "AND nodes.branch=hirev.branch "
     "AND nodes.rev=hirev.rev;",
     'graph_val_keys_set':
-    "SELECT graph_val.key, graph_val.value "
+    "SELECT graph_val.key "
     "FROM graph_val JOIN ("
     "SELECT graph, key, branch, MAX(rev) AS rev FROM graph_val "
     "WHERE graph=? "
@@ -170,7 +170,8 @@ sql_strings = {
     "ON graph_val.graph=hirev.graph "
     "AND graph_val.key=hirev.key "
     "AND graph_val.branch=hirev.branch "
-    "AND graph_val.rev=hirev.rev;",
+    "AND graph_val.rev=hirev.rev "
+    "WHERE graph_val.value IS NOT NULL;",
     'graph_val_key_set':
     "SELECT graph_val.value FROM graph_val JOIN "
     "(SELECT graph, key, branch, MAX(rev) AS rev "
@@ -208,16 +209,6 @@ sql_strings = {
     "AND key=? "
     "AND branch=? "
     "AND rev=?;",
-    'graph_val_insdel':
-    "INSERT INTO graph_val "
-    "(graph, key, branch, rev, value) "
-    "VALUES (?, ?, ?, ?, ?);",
-    'graph_val_upddel':
-    "UPDATE graph_val SET value=? WHERE "
-    "graph=? AND "
-    "key=? AND "
-    "branch=? AND "
-    "rev=?;",
     'exist_node_ins':
     "INSERT INTO nodes ("
     "graph, "
@@ -246,22 +237,7 @@ sql_strings = {
     "node_val.branch=hirev.branch AND "
     "node_val.rev=hirev.rev "
     "WHERE node_val.value IS NOT NULL;",
-    'node_val_vals':
-    "SELECT node_val.value FROM node_val JOIN "
-    "(SELECT graph, node, key, branch, MAX(rev) AS rev "
-    "FROM node_val WHERE "
-    "graph=? AND "
-    "node=? AND "
-    "key=? AND "
-    "branch=? AND "
-    "rev<=? GROUP BY graph, node, key, branch) "
-    "AS hirev ON "
-    "node_val.graph=hirev.graph AND "
-    "node_val.node=hirev.node AND "
-    "node_val.key=hirev.key AND "
-    "node_val.branch=hirev.branch AND "
-    "node_val.rev=hirev.rev;",
-    'node_val_get_val':
+    'node_val_get':
     "SELECT node_val.value FROM node_val JOIN ("
     "SELECT graph, node, key, branch, MAX(rev) AS rev "
     "FROM node_val WHERE "
@@ -277,7 +253,7 @@ sql_strings = {
     "AND node_val.branch=hirev.branch "
     "AND node_val.rev=hirev.rev "
     "WHERE node_val.value IS NOT NULL;",
-    'node_val_set_val_ins':
+    'node_val_ins':
     "INSERT INTO node_val ("
     "graph, "
     "node, "
@@ -286,19 +262,8 @@ sql_strings = {
     "rev, "
     "value) VALUES "
     "(?, ?, ?, ?, ?, ?);",
-    'node_val_set_val_upd':
+    'node_val_upd':
     "UPDATE node_val SET value=? WHERE "
-    "graph=? AND "
-    "node=? AND "
-    "key=? AND "
-    "branch=? AND "
-    "rev=?;",
-    'node_val_del_key_ins':
-    "INSERT INTO node_val "
-    "(graph, node, key, branch, rev, value) VALUES "
-    "(?, ?, ?, ?, ?, NULL);",
-    'node_val_del_key_upd':
-    "UPDATE node_val SET value=NULL WHERE "
     "graph=? AND "
     "node=? AND "
     "key=? AND "
@@ -387,25 +352,6 @@ sql_strings = {
     "AND edge_val.idx=hirev.idx "
     "AND edge_val.rev=hirev.rev "
     "WHERE edge_val.value IS NOT NULL;",
-    'edge_val_contains':
-    "SELECT edge_val.value FROM edge_val JOIN "
-    "(SELECT graph, nodeA, nodeB, idx, key, branch, "
-    "MAX(rev) AS rev FROM edge_val WHERE "
-    "graph=? AND "
-    "nodeA=? AND "
-    "nodeB=? AND "
-    "idx=? AND "
-    "key=? AND "
-    "branch=? AND "
-    "rev<=? GROUP BY "
-    "graph, nodeA, nodeB, idx, key, branch) AS hirev ON "
-    "edge_val.graph=hirev.graph AND "
-    "edge_val.nodeA=hirev.nodeA AND "
-    "edge_val.nodeB=hirev.nodeB AND "
-    "edge_val.idx=hirev.idx AND "
-    "edge_val.key=hirev.key AND "
-    "edge_val.branch=hirev.branch AND "
-    "edge_val.rev=hirev.rev;",
     'edge_val_get':
     "SELECT edge_val.value FROM edge_val JOIN ("
     "SELECT graph, nodeA, nodeB, idx, key, branch, "
@@ -427,7 +373,7 @@ sql_strings = {
     "AND edge_val.branch=hirev.branch "
     "AND edge_val.rev=hirev.rev "
     "WHERE edge_val.value IS NOT NULL;",
-    'edge_val_set_ins':
+    'edge_val_ins':
     "INSERT INTO edge_val ("
     "graph, "
     "nodeA, "
@@ -438,27 +384,7 @@ sql_strings = {
     "rev, "
     "value) VALUES "
     "(?, ?, ?, ?, ?, ?, ?, ?);",
-    'edge_val_set_upd':
-    "UPDATE edge_val SET value=? "
-    "WHERE graph=? "
-    "AND nodeA=? "
-    "AND nodeB=? "
-    "AND idx=? "
-    "AND key=? "
-    "AND branch=? "
-    "AND rev=?;",
-    'edge_val_del_ins':
-    "INSERT INTO edge_val ("
-    "graph, "
-    "nodeA, "
-    "nodeB, "
-    "idx, "
-    "key, "
-    "branch, "
-    "rev, "
-    "value) "
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
-    'edge_val_del_upd':
+    'edge_val_upd':
     "UPDATE edge_val SET value=? "
     "WHERE graph=? "
     "AND nodeA=? "
@@ -617,55 +543,3 @@ sql_strings = {
     "WHERE before.value<>after.value"
     ";"
 }
-
-
-def get_sql(stringname, flavorname):
-    return sql_strings[stringname]
-
-
-def window(self, tab, preset_cols, presets, branch, revfrom, revto):
-    """Return a dict of lists of the values assigned to my keys each
-    revision.
-
-    """
-    self.gorm.cursor.execute(
-        self.gorm.sql('parrev'),
-        (branch,)
-    )
-    parrev = self.gorm.cursor.fetchone()[0]
-    if revfrom < parrev:
-        raise ValueError(
-            "Can't make a window beginning before the start of its branch"
-        )
-    # start with whatever I have at revfrom
-    curbranch = self.gorm.branch
-    currev = self.gorm.rev
-    self.gorm.branch = branch
-    self.gorm.rev = revfrom
-    r = {}
-    for (k, v) in self.items():
-        r[k] = [v]
-    self.gorm.branch = curbranch
-    self.gorm.rev = currev
-    self.gorm.cursor.execute(
-        "SELECT key, rev, value FROM {table} "
-        "WHERE {presetqs} AND"
-        "branch=? AND "
-        "rev>=? AND "
-        "rev<=? ORDER BY key, rev;".format(
-            table=tab,
-            presetqs=" AND ".join(col + "=?" for col in preset_cols)
-        ),
-        tuple(presets) + (
-            branch,
-            revfrom,
-            revto
-        )
-    )
-    for (key, rev, value) in self.gorm.cursor.fetchall():
-        l = r[key]
-        padlen = len(l) - rev - revfrom
-        padval = l[-1]
-        l.extend([padval] * padlen)
-        l[rev] = json_load(value)
-    return r
