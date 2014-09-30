@@ -1,5 +1,4 @@
 from sqlalchemy import (
-    text,
     Table,
     Index,
     Column,
@@ -9,10 +8,13 @@ from sqlalchemy import (
     Boolean,
     String,
     MetaData,
-    ForeignKey
+    ForeignKey,
+    select,
+    func,
+    and_,
+    null
 )
 from sqlalchemy.sql import bindparam
-from gorm.json import json_dump
 
 length = 50
 
@@ -144,661 +146,288 @@ index_edge_val = Index(
 )
 
 
-node_val_compare_text = text(
-    "SELECT before.key, before.value, after.value FROM "
-    "(SELECT key, value, FROM node_val JOIN ("
-    "SELECT graph, node, key, branch, MAX(rev) "
-    "AS rev FROM node_val "
-    "WHERE graph=:graphone "
-    "AND node=:nodeone "
-    "AND branch=:branchone "
-    "AND rev<=:revone GROUP BY graph, node, key, branch) AS hirev1 "
-    "ON node_val.graph=hirev1.graph "
-    "AND node_val.node=hirev1.node "
-    "AND node_val.key=hirev1.key "
-    "AND node_val.branch=hirev1.branch "
-    "AND node_val.rev=hirev1.rev"
-    ") AS before FULL JOIN "
-    "(SELECT key, value FROM node_val JOIN ("
-    "SELECT graph, node, key, branch, "
-    "MAX(rev) AS rev FROM node_val "
-    "WHERE graph=:graphtwo "
-    "AND node=:nodetwo "
-    "AND branch=:branchtwo "
-    "AND rev<=:revtwo GROUP BY graph, node, key, branch) AS hirev2 "
-    "ON node_val.graph=hirev2.graph "
-    "AND node_val.node=hirev2.node "
-    "AND node_val.key=hirev2.key "
-    "AND node_val.branch=hirev2.branch "
-    "AND node_val.rev=hirev2.rev"
-    ") AS after "
-    "ON before.key=after.key "
-    "WHERE before.value<>after.value"
-    ";"
-)
-
-
-def node_val_compare(
-        conn, graph1, node1, branch_before, rev_before,
-        graph2, node2, branch_after, rev_after
-):
-    return conn.execute(
-        node_val_compare_text,
-        graphone=graph1,
-        nodeone=node1,
-        branchone=branch_before,
-        revone=rev_before,
-        graphtwo=graph2,
-        nodetwo=node2,
-        branchtwo=branch_after,
-        revtwo=rev_after
-    )
-
-edge_val_compare_text = text(
-    "SELECT before.key, before.value, after.value "
-    "FROM (SELECT key, value FROM edge_val JOIN "
-    "(SELECT graph, nodeA, nodeB, idx, key, branch, "
-    "MAX(rev) AS rev "
-    "FROM edge_val WHERE "
-    "graph=:gone AND "
-    "nodeA=:origone AND "
-    "nodeB=:destone AND "
-    "idx=:ione AND "
-    "branch=:bone AND "
-    "rev<=:rone "
-    "GROUP BY graph, nodeA, nodeB, idx, key, branch) AS hirev1 "
-    "ON edge_val.graph=hirev1.graph "
-    "AND edge_val.nodeA=hirev1.nodeA "
-    "AND edge_val.nodeB=hirev1.nodeB "
-    "AND edge_val.idx=hirev1.idx "
-    "AND edge_val.key=hirev1.key "
-    "AND edge_val.branch=hirev1.branch "
-    "AND edge_val.rev=hirev1.rev"
-    ") AS before FULL JOIN "
-    "(SELECT key, value FROM edge_val JOIN "
-    "(SELECT graph, nodeA, nodeB, idx, key, branch, "
-    "MAX(rev) AS rev "
-    "FROM edge_val WHERE "
-    "graph=:gtwo AND "
-    "nodeA=:origtwo AND "
-    "nodeB=:desttwo AND "
-    "idx=:itwo AND "
-    "branch=:btwo AND "
-    "rev<=:rtwo "
-    "GROUP BY graph, nodeA, nodeB, idx, key, branch) AS hirev2 "
-    "ON edge_val.graph=hirev2.graph "
-    "AND edge_val.nodeA=hirev2.nodeA "
-    "AND edge_val.nodeB=hirev2.nodeB "
-    "AND edge_val.idx=hirev2.idx "
-    "AND edge_val.key=hirev2.key "
-    "AND edge_val.branch=hirev2.branch "
-    "AND edge_val.rev=hirev2.rev"
-    ") AS after ON "
-    "before.key=after.key "
-    "WHERE before.value<>after.value"
-    ";"
-)
-
-
-def edge_val_compare(
-        conn, graph1, nodeA1, nodeB1, idx1, branch_before, rev_before,
-        graph2, nodeA2, nodeB2, idx2, branch_after, rev_after
-):
-    return conn.execute(
-        edge_val_compare_text,
-        gone=graph1,
-        origone=nodeA1,
-        destone=nodeB1,
-        ione=idx1,
-        bone=branch_before,
-        rone=rev_before,
-        gtwo=graph2,
-        origtwo=nodeA2,
-        desttwo=nodeB2,
-        itwo=idx2,
-        btwo=branch_after,
-        rtwo=rev_after
-    )
-
-graph_compare_text = text(
-    "SELECT before.key, before.value, after.value "
-    "FROM (SELECT key, value FROM graph_val JOIN "
-    "(SELECT graph, key, branch, MAX(rev) AS rev "
-    "FROM graph_val WHERE "
-    "graph=:gone AND "
-    "branch=:bone AND "
-    "rev<=:rone GROUP BY graph, key, branch) AS hirev1 "
-    "ON graph_val.graph=hirev1.graph "
-    "AND graph_val.key=hirev1.key "
-    "AND graph_val.branch=hirev1.branch "
-    "AND graph_val.rev=hirev1.rev"
-    ") AS before FULL JOIN "
-    "(SELECT key, value FROM graph_val JOIN "
-    "(SELECT graph, key, branch, MAX(rev) AS rev "
-    "FROM graph_val WHERE "
-    "graph=:gtwo AND "
-    "branch=:btwo AND "
-    "rev<=:rtwo GROUP BY graph, key, branch) AS hirev2 "
-    "ON graph_val.graph=hirev2.graph "
-    "AND graph_val.key=hirev2.key "
-    "AND graph_val.branch=hirev2.branch "
-    "AND graph_val.rev=hirev2.rev"
-    ") AS after ON "
-    "before.key=after.key "
-    "WHERE before.value<>after.value"
-    ";"
-)
-
-
-def graph_compare(
-        conn, graph1, branch_before, rev_before,
-        graph2, branch_after, rev_after
-):
-    return conn.execute(
-        graph_compare_text,
-        gone=graph1,
-        bone=branch_before,
-        rone=rev_before,
-        gtwo=graph2,
-        btwo=branch_after,
-        rtwo=rev_after
-    )
-
-
 class Alchemist(object):
     def __init__(self, engine):
         self.engine = engine
         self.conn = self.engine.connect()
-        self.ins_global_default_branch_compiled = table_global.insert().values(
-            key=json_dump('branch'),
-            value=json_dump('master')
-        ).compile(dialect=self.engine.dialect)
-        self.ins_global_default_rev_compiled = table_global.insert().values(
-            key=json_dump('rev'),
-            value=json_dump(0)
-        ).compile(dialect=self.engine.dialect)
-        self.ins_branches_defaults = table_branches.insert().values(
-            branch='master',
-            parent='master',
-            parent_rev=0
-        ).compile(dialect=self.engine.dialect)
-        self.ctbranch_compiled = text(
-            "SELECT COUNT(*) FROM branches WHERE branch=:branch;"
-        ).compile(dialect=self.engine.dialect)
-        self.ctgraph_compiled = text(
-            "SELECT COUNT(*) FROM graphs WHERE graph=:graph;"
-        ).compile(dialect=self.engine.dialect)
-        self.allbranch_compiled = text(
-            "SELECT branch, parent, parent_rev FROM branches;"
-        ).compile(dialect=self.engine.dialect)
-        self.global_key_compiled = text(
-            "SELECT value FROM global WHERE key=:key;"
-        ).compile(dialect=self.engine.dialect)
-        self.new_graph_compiled = text(
-            "INSERT INTO graphs (graph, type) VALUES (:graph, :typ);"
-        ).compile(dialect=self.engine.dialect)
-        self.new_branch_compiled = table_branches.insert().values(
-            branch=bindparam('branch'),
-            parent=bindparam('parent'),
-            parent_rev=bindparam('parent_rev')
-        ).compile(dialect=self.engine.dialect)
-        self.del_edge_val_graph_compiled = table_edge_val.delete().where(
-            table_edge_val.c.graph == bindparam('graph')
-        ).compile(dialect=self.engine.dialect)
-        self.del_node_val_graph_compiled = table_node_val.delete().where(
-            table_node_val.c.graph == bindparam('graph')
-        ).compile(dialect=self.engine.dialect)
-        self.del_node_graph_compiled = table_nodes.delete().where(
-            table_nodes.c.graph == bindparam('graph')
-        ).compile(dialect=self.engine.dialect)
-        self.del_graph_compiled = table_graphs.delete().where(
-            table_graphs.c.graph == bindparam('graph')
-        ).compile(dialect=self.engine.dialect)
-        self.parrev_compiled = text(
-            "SELECT parent_rev FROM branches WHERE branch=:branch;"
-        ).compile(dialect=self.engine.dialect)
-        self.parparrev_compiled = text(
-            "SELECT parent, parent_rev FROM branches WHERE branch=:branch;"
-        ).compile(dialect=self.engine.dialect)
-        self.global_ins_compiled = table_global.insert().values(
-            key=bindparam('k'),
-            value=bindparam('v')
-        ).compile(dialect=self.engine.dialect)
-        self.global_set_compiled = table_global.update().values(
-            value=bindparam('v')
-        ).where(
-            table_global.c.key == bindparam('k')
-        )
-        self.nodes_extant_compiled = text(
-            "SELECT nodes.node "
-            "FROM nodes JOIN ("
-            "SELECT graph, node, branch, MAX(rev) AS rev FROM nodes "
-            "WHERE graph=:g "
-            "AND branch=:b "
-            "AND rev<=:r "
-            "GROUP BY graph, node, branch) AS hirev "
-            "ON nodes.graph=hirev.graph "
-            "AND nodes.node=hirev.node "
-            "AND nodes.branch=hirev.branch "
-            "AND nodes.rev=hirev.rev "
-            "WHERE nodes.node IS NOT NULL "
-            "AND nodes.extant;"
-        ).compile(dialect=self.engine.dialect)
-        self.node_exists_compiled = text(
-            "SELECT nodes.extant FROM nodes JOIN ("
-            "SELECT graph, node, branch, MAX(rev) AS rev FROM nodes "
-            "WHERE graph=:g "
-            "AND node=:n "
-            "AND branch=:b "
-            "AND rev<=:r "
-            "GROUP BY graph, node, branch) AS hirev "
-            "ON nodes.graph=hirev.graph "
-            "AND nodes.node=hirev.node "
-            "AND nodes.branch=hirev.branch "
-            "AND nodes.rev=hirev.rev;"
-        ).compile(dialect=self.engine.dialect)
-        self.exist_node_ins_compiled = table_nodes.insert().values(
-            graph=bindparam('g'),
-            node=bindparam('n'),
-            branch=bindparam('b'),
-            rev=bindparam('r'),
-            extant=bindparam('x')
-        ).compile(dialect=self.engine.dialect)
-        self.exist_node_upd_compiled = text(
-            "UPDATE nodes SET extant=:x "
-            "WHERE graph=:g "
-            "AND node=:n "
-            "AND branch=:b "
-            "AND rev=:r;"
-        ).compile(dialect=self.engine.dialect)
-        self.graph_val_keys_set_compiled = text(
-            "SELECT graph_val.key "
-            "FROM graph_val JOIN ("
-            "SELECT graph, key, branch, MAX(rev) AS rev FROM graph_val "
-            "WHERE graph=:g "
-            "AND branch=:b "
-            "AND rev<=:r "
-            "GROUP BY graph, key, branch) AS hirev "
-            "ON graph_val.graph=hirev.graph "
-            "AND graph_val.key=hirev.key "
-            "AND graph_val.branch=hirev.branch "
-            "AND graph_val.rev=hirev.rev "
-            "WHERE graph_val.value IS NOT NULL;"
-        ).compile(dialect=self.engine.dialect)
-        self.graph_val_key_set_compiled = text(
-            "SELECT graph_val.value FROM graph_val JOIN "
-            "(SELECT graph, key, branch, MAX(rev) AS rev "
-            "FROM graph_val WHERE "
-            "graph=:g AND "
-            "key=:k AND "
-            "branch=:b AND "
-            "rev<=:r GROUP BY graph, key, branch) AS hirev ON "
-            "graph_val.graph=hirev.graph AND "
-            "graph_val.key=hirev.key AND "
-            "graph_val.branch=hirev.branch AND "
-            "graph_val.rev=hirev.rev;"
-        ).compile(dialect=self.engine.dialect)
-        self.graph_val_present_value_compiled = text(
-            "SELECT value FROM graph_val JOIN ("
-            "SELECT graph, key, branch, MAX(rev) AS rev "
-            "FROM graph_val WHERE "
-            "graph=:g AND "
-            "key=:k AND "
-            "branch=:b AND "
-            "rev<=:r GROUP BY graph, key, branch) AS hirev "
-            "ON graph_val.graph=hirev.graph "
-            "AND graph_val.key=hirev.key "
-            "AND graph_val.branch=hirev.branch "
-            "AND graph_val.rev=hirev.rev;"
-        ).compile(dialect=self.engine.dialect)
-        self.graph_val_ins_compiled = table_graph_val.insert().values(
-            graph=bindparam('g'),
-            key=bindparam('k'),
-            branch=bindparam('b'),
-            rev=bindparam('r'),
-            value=bindparam('v')
-        ).compile(dialect=self.engine.dialect)
-        self.graph_val_upd_compiled = text(
-            "UPDATE graph_val SET value=:v "
-            "WHERE graph=:g "
-            "AND key=:k "
-            "AND branch=:b "
-            "AND rev=:r;"
-        ).compile(dialect=self.engine.dialect)
-        self.node_val_keys_compiled = text(
-            "SELECT node_val.key FROM node_val JOIN ("
-            "SELECT graph, node, key, branch, MAX(rev) AS rev "
-            "FROM node_val WHERE "
-            "graph=:g AND "
-            "node=:n AND "
-            "branch=:b AND "
-            "rev<=:r "
-            "GROUP BY graph, node, key, branch) AS hirev ON "
-            "node_val.graph=hirev.graph AND "
-            "node_val.node=hirev.node AND "
-            "node_val.key=hirev.key AND "
-            "node_val.branch=hirev.branch AND "
-            "node_val.rev=hirev.rev "
-            "WHERE node_val.value IS NOT NULL;"
-        ).compile(dialect=self.engine.dialect)
-        self.node_val_get_compiled = text(
-            "SELECT node_val.value FROM node_val JOIN ("
-            "SELECT graph, node, key, branch, MAX(rev) AS rev "
-            "FROM node_val WHERE "
-            "graph=:g AND "
-            "node=:n AND "
-            "key=:k AND "
-            "branch=:b AND "
-            "rev<=:r "
-            "GROUP BY graph, node, key, branch) AS hirev "
-            "ON node_val.graph=hirev.graph "
-            "AND node_val.node=hirev.node "
-            "AND node_val.key=hirev.key "
-            "AND node_val.branch=hirev.branch "
-            "AND node_val.rev=hirev.rev "
-            "WHERE node_val.value IS NOT NULL;"
-        ).compile(dialect=self.engine.dialect)
-        self.node_val_ins_compiled = table_node_val.insert().values(
-            graph=bindparam('g'),
-            node=bindparam('n'),
-            key=bindparam('k'),
-            branch=bindparam('b'),
-            rev=bindparam('r'),
-            value=bindparam('v')
-        ).compile(dialect=self.engine.dialect)
-        self.node_val_upd_compiled = text(
-            "UPDATE node_val SET value=:v WHERE "
-            "graph=:g AND "
-            "node=:n AND "
-            "key=:k AND "
-            "branch=:b AND "
-            "rev=:r;"
-        ).compile(dialect=self.engine.dialect)
-        self.edge_extant_compiled = text(
-            "SELECT edges.extant FROM edges JOIN ("
-            "SELECT graph, nodeA, nodeB, idx, branch, "
-            "MAX(rev) AS rev FROM edges "
-            "WHERE graph=:g "
-            "AND nodeA=:orig "
-            "AND nodeB=:dest "
-            "AND idx=:i "
-            "AND branch=:b "
-            "AND rev<=:r "
-            "GROUP BY graph, nodeA, nodeB, idx, branch) AS hirev "
-            "ON edges.graph=hirev.graph "
-            "AND edges.nodeA=hirev.nodeA "
-            "AND edges.nodeB=hirev.nodeB "
-            "AND edges.idx=hirev.idx "
-            "AND edges.branch=hirev.branch "
-            "AND edges.rev=hirev.rev;"
-        ).compile(dialect=self.engine.dialect)
-        self.edge_exist_ins_compiled = table_edges.insert().values(
-            graph=bindparam('g'),
-            nodeA=bindparam('orig'),
-            nodeB=bindparam('dest'),
-            idx=bindparam('i'),
-            branch=bindparam('b'),
-            rev=bindparam('r'),
-            extant=bindparam('x')
-        ).compile(dialect=self.engine.dialect)
-        self.edge_exist_upd_compiled = text(
-            "UPDATE edges SET extant=:x WHERE "
-            "graph=:g AND "
-            "nodeA=:orig AND "
-            "nodeB=:dest AND "
-            "idx=:i AND "
-            "branch=:b AND "
-            "rev=:r;"
-        ).compile(dialect=self.engine.dialect)
-        self.edge_val_keys_compiled = text(
-            "SELECT edge_val.key FROM edge_val JOIN ("
-            "SELECT graph, nodeA, nodeB, idx, key, branch, "
-            "MAX(rev) AS rev "
-            "FROM edge_val WHERE "
-            "graph=:g AND "
-            "nodeA=:orig AND "
-            "nodeB=:dest AND "
-            "idx=:i AND "
-            "branch=:b AND "
-            "rev<=:r GROUP BY graph, nodeA, nodeB, idx, key, branch) "
-            "AS hirev "
-            "ON edge_val.graph=hirev.graph "
-            "AND edge_val.nodeA=hirev.nodeA "
-            "AND edge_val.nodeB=hirev.nodeB "
-            "AND edge_val.idx=hirev.idx "
-            "AND edge_val.rev=hirev.rev "
-            "WHERE edge_val.value IS NOT NULL;"
-        ).compile(dialect=self.engine.dialect)
-        self.edge_val_get_compiled = text(
-            "SELECT edge_val.value FROM edge_val JOIN ("
-            "SELECT graph, nodeA, nodeB, idx, key, branch, "
-            "MAX(rev) AS rev "
-            "FROM edge_val WHERE "
-            "graph=:g AND "
-            "nodeA=:orig AND "
-            "nodeB=:dest AND "
-            "idx=:i AND "
-            "key=:k AND "
-            "branch=:b AND "
-            "rev<=:r "
-            "GROUP BY graph, nodeA, nodeB, idx, key, branch) AS hirev "
-            "ON edge_val.graph=hirev.graph "
-            "AND edge_val.nodeA=hirev.nodeA "
-            "AND edge_val.nodeB=hirev.nodeB "
-            "AND edge_val.idx=hirev.idx "
-            "AND edge_val.key=hirev.key "
-            "AND edge_val.branch=hirev.branch "
-            "AND edge_val.rev=hirev.rev "
-            "WHERE edge_val.value IS NOT NULL;"
-        ).compile(dialect=self.engine.dialect)
-        self.edge_val_ins_compiled = table_edge_val.insert().values(
-            graph=bindparam('g'),
-            nodeA=bindparam('orig'),
-            nodeB=bindparam('dest'),
-            idx=bindparam('i'),
-            key=bindparam('k'),
-            branch=bindparam('b'),
-            rev=bindparam('r'),
-            value=bindparam('v')
-        ).compile(dialect=self.engine.dialect)
-        self.edge_val_upd_compiled = text(
-            "UPDATE edge_val SET value=:v "
-            "WHERE graph=:g "
-            "AND nodeA=:orig "
-            "AND nodeB=:dest "
-            "AND idx=:i "
-            "AND key=:k "
-            "AND branch=:b "
-            "AND rev=:r;"
-        )
-        self.edgeiter_compiled = text(
-            "SELECT edges.nodeA, edges.extant FROM edges JOIN "
-            "(SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
-            "FROM edges WHERE "
-            "graph=:g AND "
-            "branch=:b AND "
-            "rev<=:r GROUP BY "
-            "graph, nodeA, nodeB, idx, branch) AS hirev ON "
-            "edges.graph=hirev.graph AND "
-            "edges.nodeA=hirev.nodeA AND "
-            "edges.nodeB=hirev.nodeB AND "
-            "edges.idx=hirev.idx AND "
-            "edges.branch=hirev.branch AND "
-            "edges.rev=hirev.rev;"
-        ).compile(dialect=self.engine.dialect)
-        self.nodeBiter_compiled = text(
-            "SELECT edges.nodeB, edges.extant FROM edges JOIN ("
-            "SELECT graph, nodeA, nodeB, branch, MAX(rev) AS rev "
-            "FROM edges WHERE "
-            "graph=:g AND "
-            "nodeA=:orig AND "
-            "branch=:b AND "
-            "rev<=:r "
-            "GROUP BY graph, nodeA, nodeB, branch) "
-            "AS hirev ON "
-            "edges.graph=hirev.graph AND "
-            "edges.nodeA=hirev.nodeA AND "
-            "edges.nodeB=hirev.nodeB AND "
-            "edges.branch=hirev.branch AND "
-            "edges.rev=hirev.rev;"
-        ).compile(dialect=self.engine.dialect)
-        self.nodeAiter_compiled = text(
-            "SELECT edges.nodeA, edges.extant FROM edges JOIN ("
-            "SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
-            "FROM edges WHERE "
-            "graph=:g AND "
-            "nodeB=:dest AND "
-            "branch=:b AND "
-            "rev<=:r "
-            "GROUP BY graph, nodeA, nodeB, idx, branch "
-            ") AS hirev ON "
-            "edges.graph=hirev.graph AND "
-            "edges.nodeA=hirev.nodeA AND "
-            "edges.nodeB=hirev.nodeB AND "
-            "edges.idx=hirev.idx AND "
-            "edges.branch=hirev.branch AND "
-            "edges.rev=hirev.rev;"
-        ).compile(dialect=self.engine.dialect)
-        self.edge_exists_compiled = text(
-            "SELECT edges.extant FROM edges JOIN "
-            "(SELECT graph, nodeA, nodeB, idx, branch, "
-            "MAX(rev) AS rev FROM edges WHERE "
-            "graph=:g AND "
-            "nodeA=:orig AND "
-            "nodeB=:dest AND "
-            "branch=:b AND "
-            "rev<=:r "
-            "GROUP BY graph, nodeA, nodeB, idx, branch"
-            ") AS hirev ON "
-            "edges.graph=hirev.graph AND "
-            "edges.nodeA=hirev.nodeA AND "
-            "edges.nodeB=hirev.nodeB AND "
-            "edges.idx=hirev.idx AND "
-            "edges.branch=hirev.branch AND "
-            "edges.rev=hirev.rev;"
-        ).compile(dialect=self.engine.dialect)
-        self.multi_edges_iter_compiled = text(
-            "SELECT edges.idx, edges.extant FROM edges JOIN ("
-            "SELECT graph, nodeA, nodeB, idx, branch, MAX(rev) AS rev "
-            "FROM edges WHERE "
-            "graph=:g AND "
-            "nodeA=:orig AND "
-            "nodeB=:dest AND "
-            "branch=:b AND "
-            "rev<=:r "
-            "GROUP BY graph, nodeA, nodeB, idx, branch) AS hirev ON "
-            "edges.graph=hirev.graph AND "
-            "edges.nodeA=hirev.nodeA AND "
-            "edges.nodeB=hirev.nodeB AND "
-            "edges.idx=hirev.idx AND "
-            "edges.branch=hirev.branch AND "
-            "edges.rev=hirev.rev"
-            ";"
-        ).compile(dialect=self.engine.dialect)
-
-    def ins_global_default_branch(self):
-        return self.conn.execute(
-            self.ins_global_default_branch_compiled
-        )
-
-    def ins_global_default_rev(self):
-        return self.conn.execute(
-            self.ins_global_default_rev_compiled
-        )
+        self.meta = meta
 
     def ctbranch(self, branch):
+        if not hasattr(self, '_ctbranch_compiled'):
+            self._ctbranch_compiled = select(
+                [func.COUNT(table_branches.c.branch)]
+            ).where(
+                table_branches.c.branch == bindparam('branch')
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.ctbranch_compiled,
+            self._ctbranch_compiled,
             branch=branch
         )
 
     def ctgraph(self, graph):
+        if not hasattr(self, '_ctgraph_compiled'):
+            self._ctgraph_compiled = select(
+                [func.COUNT(table_graphs.c.graph)]
+            ).where(
+                table_graphs.c.graph == bindparam('graph')
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.ctgraph_compiled,
+            self._ctgraph_compiled,
             graph=graph
         )
 
     def allbranch(self):
+        if not hasattr(self, '_allbranch_compiled'):
+            self._allbranch_compiled = select(
+                [
+                    table_branches.c.branch,
+                    table_branches.c.parent,
+                    table_branches.c.parent_rev
+                ]
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.allbranch_compiled
+            self._allbranch_compiled
         )
 
-    def global_key(self, key):
+    def global_get(self, key):
+        if not hasattr(self, '_global_get_compiled'):
+            self._global_get_compiled = select(
+                [table_global.c.value]
+            ).where(
+                table_global.c.key == bindparam('key')
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.global_key_compiled,
+            self._global_get_compiled,
             key=key
         )
 
-    def new_graph(self, graph, typ):
+    def global_items(self):
+        if not hasattr(self, '_global_items_compiled'):
+            self._global_items_compiled = select(
+                [
+                    table_global.c.key,
+                    table_global.c.value
+                ]
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.new_graph_compiled,
+            self._global_items_compiled
+        )
+
+    def ctglobal(self):
+        if not hasattr(self, '_ctglobal_compiled'):
+            self._ctglobal_compiled = select(
+                [func.COUNT(table_global.c.key)]
+            ).compile(dialect=self.engine.dialect)
+        return self.conn.execute(
+            self._ctglobal_compiled
+        )
+
+    def new_graph(self, graph, typ):
+        if not hasattr(self, '_new_graph_compiled'):
+            self._new_graph_compiled = table_graphs.insert().values(
+                graph=bindparam('graph'),
+                type=bindparam('type')
+            ).compile(dialect=self.engine.dialect)
+        return self.conn.execute(
+            self._new_graph_compiled,
             graph=graph,
-            typ=typ
+            type=typ
+        )
+
+    def graph_type(self, graph):
+        if not hasattr(self, '_graph_type_compiled'):
+            self._graph_type_compiled = select(
+                [table_graphs.c.type]
+            ).where(
+                table_graphs.c.graph == bindparam('g')
+            ).compile(dialect=self.engine.dialect)
+        return self.conn.execute(
+            self._graph_type_compiled,
+            g=graph
         )
 
     def new_branch(self, branch, parent, parent_rev):
+        if not hasattr(self, '_new_branch_compiled'):
+            self._new_branch_compiled = table_branches.insert().values(
+                branch=bindparam('branch'),
+                parent=bindparam('parent'),
+                parent_rev=bindparam('parent_rev')
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.new_branch_compiled,
+            self._new_branch_compiled,
             branch=branch,
             parent=parent,
             parent_rev=parent_rev
         )
 
     def del_edge_val_graph(self, graph):
+        if not hasattr(self, '_del_edge_val_graph_compiled'):
+            self._del_edge_val_graph_compiled = (
+                table_edge_val.delete().where(
+                    table_edge_val.c.graph == bindparam('graph')
+                ).compile(dialect=self.engine.dialect)
+            )
         return self.conn.execute(
-            self.del_edge_val_graph_compiled,
+            self._del_edge_val_graph_compiled,
             graph=graph
         )
 
     def del_node_val_graph(self, graph):
+        if not hasattr(self, '_del_node_val_graph_compiled'):
+            self._del_node_val_graph_compiled = table_node_val.delete().where(
+                table_node_val.c.graph == bindparam('graph')
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.del_node_val_graph_compiled,
+            self._del_node_val_graph_compiled,
             graph=graph
         )
 
     def del_node_graph(self, graph):
+        if not hasattr(self, '_del_node_graph_compiled'):
+            self._del_node_graph_compiled = table_nodes.delete().where(
+                table_nodes.c.graph == bindparam('graph')
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.del_node_graph_compiled,
+            self._del_node_graph_compiled,
+            graph=graph
+        )
+
+    def del_graph(self, graph):
+        if not hasattr(self, '_del_graph_compiled'):
+            self._del_graph_compiled = table_graphs.delete().where(
+                table_graphs.c.graph == bindparam('graph')
+            ).compile(dialect=self.engine.dialect)
+        return self.conn.execute(
+            self._del_graph_compiled,
             graph=graph
         )
 
     def parrev(self, branch):
+        if not hasattr(self, '_parrev_compiled'):
+            self._parrev_compiled = select(
+                [table_branches.c.parent_rev]
+            ).where(
+                table_branches.c.branch == bindparam('branch')
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.parrev_compiled,
+            self._parrev_compiled,
             branch=branch
         )
 
     def parparrev(self, branch):
+        if not hasattr(self, '_parparrev_compiled'):
+            self._parparrev_compiled = select(
+                [table_branches.c.parent, table_branches.c.parent_rev]
+            ).where(
+                table_branches.c.branch == bindparam('branch')
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.parparrev_compiled,
+            self._parparrev_compiled,
             branch=branch
         )
 
     def global_ins(self, key, value):
+        if not hasattr(self, '_global_ins_compiled'):
+            self._global_ins_compiled = table_global.insert().values(
+                key=bindparam('k'),
+                value=bindparam('v')
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.global_ins_compiled,
+            self._global_ins_compiled,
             k=key,
             v=value
         )
 
-    def global_set(self, key, value):
+    def global_upd(self, key, value):
+        if not hasattr(self, '_global_upd_compiled'):
+            self._global_upd_compiled = table_global.update().values(
+                value=bindparam('v')
+            ).where(
+                table_global.c.key == bindparam('k')
+            )
         return self.conn.execute(
-            self.global_set_compiled,
+            self._global_upd_compiled,
             k=key,
             v=value
+        )
+
+    def global_del(self, key):
+        if not hasattr(self, '_global_del_compiled'):
+            self._global_del_compiled = table_global.delete().where(
+                key=bindparam('k')
+            ).compile(dialect=self.engine.dialect)
+        return self.conn.execute(
+            self._global_del_compiled,
+            k=key
+        )
+
+    def _recent_nodes(self, node=False):
+        hirev_where = [
+            table_nodes.c.graph == bindparam('g'),
+            table_nodes.c.branch == bindparam('b'),
+            table_nodes.c.rev <= bindparam('r')
+        ]
+        if node:
+            hirev_where.append(table_nodes.c.node == bindparam('n'))
+        nodes_hirev = select(
+            [
+                table_nodes.c.graph,
+                table_nodes.c.node,
+                table_nodes.c.branch,
+                func.MAX(table_nodes.c.rev).label('rev')
+            ]
+        ).where(
+            and_(
+                *hirev_where
+            )
+        ).group_by(
+            table_nodes.c.graph,
+            table_nodes.c.node,
+            table_nodes.c.branch
+        ).alias('hirev')
+        return select(
+            [
+                table_nodes.c.graph,
+                table_nodes.c.node,
+                table_nodes.c.branch,
+                table_nodes.c.rev,
+                table_nodes.c.extant
+            ]
+        ).select_from(
+            table_nodes.join(
+                nodes_hirev,
+                and_(
+                    table_nodes.c.graph == nodes_hirev.c.graph,
+                    table_nodes.c.node == nodes_hirev.c.node,
+                    table_nodes.c.branch == nodes_hirev.c.branch,
+                    table_nodes.c.rev == nodes_hirev.c.rev
+                )
+            )
         )
 
     def nodes_extant(self, graph, branch, rev):
+        if not hasattr(self, '_nodes_extant_compiled'):
+            rn = self._recent_nodes()
+            self._nodes_extant_compiled = select(
+                [rn.c.node]
+            ).where(
+                rn.c.extant
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.nodes_extant_compiled,
+            self._nodes_extant_compiled,
             g=graph,
             b=branch,
             r=rev
         )
 
     def node_exists(self, graph, node, branch, rev):
+        if not hasattr(self, '_node_exists_compiled'):
+            rn = self._recent_nodes(node=True)
+            self._node_exists_compiled = select(
+                [rn.c.extant]
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.node_exists_compiled,
+            self._node_exists_compiled,
             g=graph,
             n=node,
             b=branch,
@@ -806,8 +435,18 @@ class Alchemist(object):
         )
 
     def exist_node_ins(self, graph, node, branch, rev, extant):
+        if not hasattr(self, '_exist_node_ins_compiled'):
+            self._exist_node_ins_compiled = (
+                table_nodes.insert().values(
+                    graph=bindparam('g'),
+                    node=bindparam('n'),
+                    branch=bindparam('b'),
+                    rev=bindparam('r'),
+                    extant=bindparam('x')
+                ).compile(dialect=self.engine.dialect)
+            )
         return self.conn.execute(
-            self.exist_node_ins_compiled,
+            self._exist_node_ins_compiled,
             g=graph,
             n=node,
             b=branch,
@@ -816,8 +455,19 @@ class Alchemist(object):
         )
 
     def exist_node_upd(self, extant, graph, node, branch, rev):
+        if not hasattr(self, '_exist_node_upd_compiled'):
+            self._exist_node_upd_compiled = table_nodes.update().values(
+                extant=bindparam('x')
+            ).where(
+                and_(
+                    table_nodes.c.graph == bindparam('g'),
+                    table_nodes.c.node == bindparam('n'),
+                    table_nodes.c.branch == bindparam('b'),
+                    table_nodes.c.rev == bindparam('r')
+                )
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.exist_node_upd_compiled,
+            self._exist_node_upd_compiled,
             x=extant,
             g=graph,
             n=node,
@@ -825,26 +475,69 @@ class Alchemist(object):
             r=rev
         )
 
-    def graph_val_keys_set(self, graph, branch, rev):
+    def _recent_graph_val(self, key=False):
+        hirev_where = [
+            table_graph_val.c.graph == bindparam('g'),
+            table_graph_val.c.branch == bindparam('b'),
+            table_graph_val.c.rev <= bindparam('r')
+        ]
+        if key:
+            hirev_where.append(table_graph_val.c.key == bindparam('k'))
+        hirev_graph_val = select(
+            [
+                table_graph_val.c.graph,
+                table_graph_val.c.key,
+                table_graph_val.c.branch,
+                func.MAX(table_graph_val.c.rev).label('rev')
+            ]
+        ).where(
+            and_(*hirev_where)
+        ).group_by(
+            table_graph_val.c.graph,
+            table_graph_val.c.key,
+            table_graph_val.c.branch
+        ).alias()
+        return select(
+            [
+                table_graph_val.c.graph,
+                table_graph_val.c.key,
+                table_graph_val.c.branch,
+                table_graph_val.c.rev,
+                table_graph_val.c.value
+            ]
+        ).select_from(
+            table_graph_val.join(
+                hirev_graph_val,
+                and_(
+                    table_graph_val.c.graph == hirev_graph_val.c.graph,
+                    table_graph_val.c.key == hirev_graph_val.c.key,
+                    table_graph_val.c.branch == hirev_graph_val.c.branch,
+                    table_graph_val.c.rev == hirev_graph_val.c.rev
+                )
+            )
+        )
+
+    def graph_val_items(self, graph, branch, rev):
+        if not hasattr(self, '_graph_val_items_compiled'):
+            rgv = self._recent_graph_val()
+            self._graph_val_items_compiled = select(
+                [rgv.c.key, rgv.c.value]
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.graph_val_keys_set_compiled,
+            self._graph_val_items_compiled,
             g=graph,
             b=branch,
             r=rev
         )
 
-    def graph_val_key_set(self, graph, key, branch, rev):
+    def graph_val_get(self, graph, key, branch, rev):
+        if not hasattr(self, '_graph_val_get_compiled'):
+            rgv = self._recent_graph_val(key=True)
+            self._graph_val_get_compiled = select(
+                [rgv.c.value]
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.graph_val_key_set_compiled,
-            g=graph,
-            k=key,
-            b=branch,
-            r=rev
-        )
-
-    def graph_val_present_value(self, graph, key, branch, rev):
-        return self.conn.execute(
-            self.graph_val_present_value_compiled,
+            self._graph_val_get_compiled,
             g=graph,
             k=key,
             b=branch,
@@ -852,8 +545,18 @@ class Alchemist(object):
         )
 
     def graph_val_ins(self, graph, key, branch, rev, value):
+        if not hasattr(self, '_graph_val_ins_compiled'):
+            self._graph_val_ins_compiled = (
+                table_graph_val.insert().values(
+                    graph=bindparam('g'),
+                    key=bindparam('k'),
+                    branch=bindparam('b'),
+                    rev=bindparam('r'),
+                    value=bindparam('v')
+                ).compile(dialect=self.engine.dialect)
+            )
         return self.conn.execute(
-            self.graph_val_ins_compiled,
+            self._graph_val_ins_compiled,
             g=graph,
             k=key,
             b=branch,
@@ -862,8 +565,19 @@ class Alchemist(object):
         )
 
     def graph_val_upd(self, value, graph, key, branch, rev):
+        if not hasattr(self, '_graph_val_upd_compiled'):
+            self._graph_val_upd_compiled = table_graph_val.update().values(
+                value=bindparam('v')
+            ).where(
+                and_(
+                    table_graph_val.c.graph == bindparam('g'),
+                    table_graph_val.c.key == bindparam('k'),
+                    table_graph_val.c.branch == bindparam('b'),
+                    table_graph_val.c.rev == bindparam('r')
+                )
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.graph_val_upd_compiled,
+            self._graph_val_upd_compiled,
             v=value,
             g=graph,
             k=key,
@@ -871,9 +585,61 @@ class Alchemist(object):
             r=rev
         )
 
-    def node_val_keys(self, graph, node, branch, rev):
+    def _recent_node_val(self, key=False):
+        hirev_where = [
+            table_node_val.c.graph == bindparam('g'),
+            table_node_val.c.node == bindparam('n'),
+            table_node_val.c.branch == bindparam('b'),
+            table_node_val.c.rev <= bindparam('r')
+        ]
+        if key:
+            hirev_where.append(table_node_val.c.key == bindparam('k'))
+        node_val_hirev = select(
+            [
+                table_node_val.c.graph,
+                table_node_val.c.node,
+                table_node_val.c.branch,
+                table_node_val.c.key,
+                func.MAX(table_node_val.c.rev).label('rev')
+            ]
+        ).where(
+            and_(*hirev_where)
+        ).group_by(
+            table_node_val.c.graph,
+            table_node_val.c.node,
+            table_node_val.c.branch,
+            table_node_val.c.key
+        ).alias('hirev')
+        return select(
+            [
+                table_node_val.c.graph,
+                table_node_val.c.node,
+                table_node_val.c.key,
+                table_node_val.c.branch,
+                table_node_val.c.rev,
+                table_node_val.c.value
+            ]
+        ).select_from(
+            table_node_val.join(
+                node_val_hirev,
+                and_(
+                    table_node_val.c.graph == node_val_hirev.c.graph,
+                    table_node_val.c.node == node_val_hirev.c.node,
+                    table_node_val.c.key == node_val_hirev.c.key,
+                    table_node_val.c.branch == node_val_hirev.c.branch,
+                    table_node_val.c.rev == node_val_hirev.c.rev
+                )
+            )
+        )
+
+    def node_val_items(self, graph, node, branch, rev):
+        if not hasattr(self, '_node_val_items_compiled'):
+            rnv = self._recent_node_val()
+            self._node_val_items_compiled = select(
+                [rnv.c.key, rnv.c.value]
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.node_val_keys_compiled,
+            self._node_val_items_compiled,
             g=graph,
             n=node,
             b=branch,
@@ -881,8 +647,15 @@ class Alchemist(object):
         )
 
     def node_val_get(self, graph, node, key, branch, rev):
+        if not hasattr(self, '_node_val_get_compiled'):
+            rnv = self._recent_node_val(key=True)
+            self._node_val_get_compiled = select(
+                [rnv.c.value]
+            ).where(
+                rnv.c.value != null()
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.node_val_get_compiled,
+            self._node_val_get_compiled,
             g=graph,
             n=node,
             k=key,
@@ -891,8 +664,17 @@ class Alchemist(object):
         )
 
     def node_val_ins(self, graph, node, key, branch, rev, value):
+        if not hasattr(self, '_node_val_ins_compiled'):
+            self._node_val_ins_compiled = table_node_val.insert().values(
+                graph=bindparam('g'),
+                node=bindparam('n'),
+                key=bindparam('k'),
+                branch=bindparam('b'),
+                rev=bindparam('r'),
+                value=bindparam('v')
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.node_val_ins_compiled,
+            self._node_val_ins_compiled,
             g=graph,
             n=node,
             k=key,
@@ -902,8 +684,20 @@ class Alchemist(object):
         )
 
     def node_val_upd(self, value, graph, node, key, branch, rev):
+        if not hasattr(self, '_node_val_upd_compiled'):
+            self._node_val_upd_compiled = table_node_val.update().values(
+                value=bindparam('v')
+            ).where(
+                and_(
+                    graph=bindparam('g'),
+                    node=bindparam('n'),
+                    key=bindparam('k'),
+                    branch=bindparam('b'),
+                    rev=bindparam('r')
+                )
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.node_val_upd_compiled,
+            self._node_val_upd_compiled,
             v=value,
             g=graph,
             n=node,
@@ -912,9 +706,67 @@ class Alchemist(object):
             r=rev
         )
 
-    def edge_extant(self, graph, nodeA, nodeB, idx, branch, rev):
+    def _edges_recent(self, orig=False, dest=False, idx=False):
+        hirev_where = [
+            table_edges.c.graph == bindparam('g'),
+            table_edges.c.branch == bindparam('b'),
+            table_edges.c.rev <= bindparam('r')
+        ]
+        if orig:
+            hirev_where.append(table_edges.c.nodeA == bindparam('orig'))
+        if dest:
+            hirev_where.append(table_edges.c.nodeB == bindparam('dest'))
+        if idx:
+            hirev_where.append(table_edges.c.idx == bindparam('i'))
+        edges_hirev = select(
+            [
+                table_edges.c.graph,
+                table_edges.c.nodeA,
+                table_edges.c.nodeB,
+                table_edges.c.idx,
+                table_edges.c.branch,
+                func.MAX(table_edges.c.rev).label('rev')
+            ]
+        ).where(
+            and_(*hirev_where)
+        ).group_by(
+            table_edges.c.graph,
+            table_edges.c.nodeA,
+            table_edges.c.nodeB,
+            table_edges.c.idx,
+            table_edges.c.branch
+        ).alias('hirev')
+        return select(
+            [
+                table_edges.c.graph,
+                table_edges.c.nodeA,
+                table_edges.c.nodeB,
+                table_edges.c.idx,
+                table_edges.c.branch,
+                table_edges.c.rev,
+                table_edges.c.extant
+            ]
+        ).select_from(
+            table_edges.join(
+                edges_hirev,
+                and_(
+                    table_edges.c.graph == edges_hirev.c.graph,
+                    table_edges.c.nodeA == edges_hirev.c.nodeA,
+                    table_edges.c.nodeB == edges_hirev.c.nodeB,
+                    table_edges.c.idx == edges_hirev.c.idx,
+                    table_edges.c.branch == edges_hirev.c.branch,
+                    table_edges.c.rev == edges_hirev.c.rev
+                )
+            )
+        )
+
+    def edge_exists(self, graph, nodeA, nodeB, idx, branch, rev):
+        if not hasattr(self, '_edge_exists_compiled'):
+            self._edge_extant_compiled = select(
+                [self._edges_recent(orig=True, dest=True, idx=True).c.extant]
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.edge_extant_compiled,
+            self._edge_exists_compiled,
             g=graph,
             orig=nodeA,
             dest=nodeB,
@@ -923,9 +775,75 @@ class Alchemist(object):
             r=rev
         )
 
-    def edge_exist_ins(self, graph, nodeA, nodeB, idx, branch, rev, extant):
+    def edges_extant(self, graph, branch, rev):
+        if not hasattr(self, '_edges_extant_compiled'):
+            er = self._edges_recent()
+            self._edges_extant_compiled = select(
+                [er.c.nodeA, er.c.extant]
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.edge_exist_ins_compiled,
+            self._edges_extant_compiled,
+            g=graph,
+            b=branch,
+            r=rev
+        )
+
+    def nodeAs(self, graph, nodeB, branch, rev):
+        if not hasattr(self, '_nodeAs_compiled'):
+            er = self._edges_recent(dest=True)
+            self._nodeAs_compiled = select(
+                [er.c.nodeA, er.c.extant]
+            ).compile(dialect=self.engine.dialect)
+        return self.conn.execute(
+            self._nodeAs_compiled,
+            g=graph,
+            dest=nodeB,
+            b=branch,
+            r=rev
+        )
+
+    def nodeBs(self, graph, nodeA, branch, rev):
+        if not hasattr(self, '_nodeBs_compiled'):
+            er = self._edges_recent(orig=True)
+            self._nodeBs_compiled = select(
+                [er.c.nodeB, er.c.extant]
+            ).compile(dialect=self.engine.dialect)
+        return self.conn.execute(
+            self._nodeBs_compiled,
+            g=graph,
+            orig=nodeA,
+            b=branch,
+            r=rev
+        )
+
+    def multi_edges(self, graph, nodeA, nodeB, branch, rev):
+        if not hasattr(self, '_multi_edges_compiled'):
+            er = self._edges_recent(orig=True, dest=True)
+            self._multi_edges_compiled = select(
+                [er.c.idx, er.c.extant]
+            ).compile(dialect=self.engine.dialect)
+        return self.conn.execute(
+            self._multi_edges_compiled,
+            g=graph,
+            orig=nodeA,
+            dest=nodeB,
+            b=branch,
+            r=rev
+        )
+
+    def edge_exist_ins(self, graph, nodeA, nodeB, idx, branch, rev, extant):
+        if not hasattr(self, '_edge_exist_ins_compiled'):
+            self._edge_exist_ins_compiled = table_edges.insert().values(
+                graph=bindparam('g'),
+                nodeA=bindparam('orig'),
+                nodeB=bindparam('dest'),
+                idx=bindparam('i'),
+                branch=bindparam('b'),
+                rev=bindparam('r'),
+                extant=bindparam('x')
+            ).compile(dialect=self.engine.dialect)
+        return self.conn.execute(
+            self._edge_exist_ins_compiled,
             g=graph,
             orig=nodeA,
             dest=nodeB,
@@ -936,8 +854,21 @@ class Alchemist(object):
         )
 
     def edge_exist_upd(self, extant, graph, nodeA, nodeB, idx, branch, rev):
+        if not hasattr(self, '_edge_exist_upd_compiled'):
+            self._edge_exist_upd_compiled = table_edges.update().values(
+                extant=bindparam('x')
+            ).where(
+                and_(
+                    table_edges.c.graph == bindparam('g'),
+                    table_edges.c.nodeA == bindparam('orig'),
+                    table_edges.c.nodeB == bindparam('dest'),
+                    table_edges.c.idx == bindparam('i'),
+                    table_edges.c.branch == bindparam('b'),
+                    table_edges.c.rev == bindparam('r')
+                )
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.edge_exist_upd_compiled,
+            self._edge_exist_upd_compiled,
             x=extant,
             g=graph,
             orig=nodeA,
@@ -947,9 +878,70 @@ class Alchemist(object):
             r=rev
         )
 
-    def edge_val_keys(self, graph, nodeA, nodeB, idx, branch, rev):
+    def _edge_val_recent(self, key=False):
+        hirev_where = [
+            table_edge_val.c.graph == bindparam('g'),
+            table_edge_val.c.nodeA == bindparam('orig'),
+            table_edge_val.c.nodeB == bindparam('dest'),
+            table_edge_val.c.idx == bindparam('i'),
+            table_edge_val.c.branch == bindparam('b'),
+            table_edge_val.c.rev <= bindparam('r')
+        ]
+        if key:
+            hirev_where.append(table_edge_val.c.key == bindparam('k'))
+        hirev_edge_val = select(
+            [
+                table_edge_val.c.graph,
+                table_edge_val.c.nodeA,
+                table_edge_val.c.nodeB,
+                table_edge_val.c.idx,
+                table_edge_val.c.key,
+                table_edge_val.c.branch,
+                func.MAX(table_edge_val.c.rev).label('rev')
+            ]
+        ).where(
+            and_(*hirev_where)
+        ).group_by(
+            table_edge_val.c.graph,
+            table_edge_val.c.nodeA,
+            table_edge_val.c.nodeB,
+            table_edge_val.c.idx,
+            table_edge_val.c.key,
+            table_edge_val.c.branch
+        ).alias('hirev')
+        return select(
+            [
+                table_edge_val.c.graph,
+                table_edge_val.c.nodeA,
+                table_edge_val.c.nodeB,
+                table_edge_val.c.idx,
+                table_edge_val.c.key,
+                table_edge_val.c.branch,
+                table_edge_val.c.rev,
+                table_edge_val.c.value
+            ]
+        ).select_from(
+            table_edge_val.join(
+                hirev_edge_val,
+                and_(
+                    table_edge_val.c.graph == hirev_edge_val.c.graph,
+                    table_edge_val.c.nodeA == hirev_edge_val.c.nodeA,
+                    table_edge_val.c.nodeB == hirev_edge_val.c.nodeB,
+                    table_edge_val.c.idx == hirev_edge_val.c.idx,
+                    table_edge_val.c.branch == hirev_edge_val.c.branch,
+                    table_edge_val.c.rev == hirev_edge_val.c.rev
+                )
+            )
+        )
+
+    def edge_val_items(self, graph, nodeA, nodeB, idx, branch, rev):
+        if not hasattr(self, '_edge_val_items_compiled'):
+            evr = self._edge_val_recent()
+            self._edge_val_items_compiled = select(
+                [evr.c.key, evr.c.value]
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.edge_val_keys_compiled,
+            self._edge_val_items_compiled,
             g=graph,
             orig=nodeA,
             dest=nodeB,
@@ -959,8 +951,15 @@ class Alchemist(object):
         )
 
     def edge_val_get(self, graph, nodeA, nodeB, idx, key, branch, rev):
+        if not hasattr(self, '_edge_val_get_compiled'):
+            evr = self._edge_val_recent(key=True)
+            self._edge_val_get_compiled = select(
+                [evr.c.value]
+            ).where(
+                evr.c.value != null()
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.edge_val_get_compiled,
+            self._edge_val_get_compiled,
             g=graph,
             orig=nodeA,
             dest=nodeB,
@@ -971,8 +970,19 @@ class Alchemist(object):
         )
 
     def edge_val_ins(self, graph, nodeA, nodeB, idx, key, branch, rev, value):
+        if not hasattr(self, '_edge_val_ins_compiled'):
+            self._edge_val_ins_compiled = table_edge_val.insert().values(
+                graph=bindparam('g'),
+                nodeA=bindparam('orig'),
+                nodeB=bindparam('dest'),
+                idx=bindparam('i'),
+                key=bindparam('k'),
+                branch=bindparam('b'),
+                rev=bindparam('r'),
+                value=bindparam('v')
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.edge_val_ins_compiled,
+            self._edge_val_ins_compiled,
             g=graph,
             orig=nodeA,
             dest=nodeB,
@@ -984,59 +994,26 @@ class Alchemist(object):
         )
 
     def edge_val_upd(self, value, graph, nodeA, nodeB, idx, key, branch, rev):
+        if not hasattr(self, '_edge_val_upd_compiled'):
+            self._edge_val_upd_compiled = table_edge_val.update().values(
+                value=bindparam('v')
+            ).where(
+                and_(
+                    table_edge_val.c.graph == bindparam('g'),
+                    table_edge_val.c.nodeA == bindparam('orig'),
+                    table_edge_val.c.nodeB == bindparam('dest'),
+                    table_edge_val.c.idx == bindparam('i'),
+                    table_edge_val.c.branch == bindparam('b'),
+                    table_edge_val.c.rev == bindparam('r')
+                )
+            ).compile(dialect=self.engine.dialect)
         return self.conn.execute(
-            self.edge_val_upd_compiled,
+            self._edge_val_upd_compiled,
             g=graph,
             orig=nodeA,
             dest=nodeB,
             i=idx,
             k=key,
-            b=branch,
-            r=rev
-        )
-
-    def edgeiter(self, graph, branch, rev):
-        return self.conn.execute(
-            self.edgeiter_compiled,
-            g=graph,
-            b=branch,
-            r=rev
-        )
-
-    def nodeBiter(self, graph, nodeA, branch, rev):
-        return self.conn.execute(
-            self.nodeBiter_compiled,
-            g=graph,
-            orig=nodeA,
-            b=branch,
-            r=rev
-        )
-
-    def nodeAiter(self, graph, nodeB, branch, rev):
-        return self.conn.execute(
-            self.nodeAiter_compiled,
-            g=graph,
-            dest=nodeB,
-            b=branch,
-            r=rev
-        )
-
-    def edge_exists(self, graph, nodeA, nodeB, branch, rev):
-        return self.conn.execute(
-            self.edge_exists_compiled,
-            g=graph,
-            orig=nodeA,
-            dest=nodeB,
-            b=branch,
-            r=rev
-        )
-
-    def multi_edges_iter(self, graph, nodeA, nodeB, branch, rev):
-        return self.conn.execute(
-            self.multi_edges_iter_compiled,
-            g=graph,
-            orig=nodeA,
-            dest=nodeB,
             b=branch,
             r=rev
         )
