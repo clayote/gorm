@@ -140,20 +140,11 @@ class ORM(object):
         self.db.globl['rev'] = v
         assert(self.rev == v)
 
+    def commit(self):
+        self.db.commit()
+
     def close(self):
-        """Commit the transaction and close the cursor.
-
-        Don't close the connection--I don't know what else is to be
-        done with it.
-
-        """
-        # maybe these should be in the opposite order?
-        if hasattr(self, 'transaction'):
-            self.transaction.commit()
-        if hasattr(self, 'connection'):
-            self.connection.commit()
-        if hasattr(self, 'cursor'):
-            self.cursor.close()
+        self.db.close()
 
     def initdb(self):
         """Create the database schema that I use, and put the (branch, rev)

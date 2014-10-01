@@ -43,14 +43,16 @@ class QueryEngine(object):
             self.alchemist = Alchemist(self.engine)
             self.transaction = self.alchemist.conn.begin()
             self.cursor = self.alchemist.conn
+            self.commit = self.engine.commit
+            self.close = self.engine.close
 
         def lite_init():
             from sqlite3 import connect
             import gorm.sql
             self.strings = gorm.sql
             self.connection = connect(dbstring.lstrip('sqlite:///'))
-            self.cursor = self.connection.cursor()
-            self.cursor.execute('BEGIN;')
+            self.commit = self.connection.commit
+            self.close = self.connection.close
 
         if alchemy:
             try:
