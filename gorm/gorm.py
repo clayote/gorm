@@ -18,7 +18,7 @@ class ORM(object):
     def __init__(
             self,
             dbstring,
-            alchemy=False,
+            alchemy=True,
             connect_args={},
             obranch=None,
             orev=None
