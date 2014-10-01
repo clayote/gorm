@@ -3,7 +3,7 @@ ctgraph = "SELECT COUNT(*) FROM graphs WHERE graph=?;"
 ctglobal = "SELECT COUNT(*) FROM global;"
 global_items = "SELECT key, value FROM global;"
 allbranch = "SELECT branch, parent, parent_rev FROM branches;"
-global_key = "SELECT value FROM global WHERE key=?;"
+global_get = "SELECT value FROM global WHERE key=?;"
 new_graph = "INSERT INTO graphs (graph, type) VALUES (?, ?);"
 graph_type = "SELECT type FROM graphs WHERE graph=?;"
 new_branch = (

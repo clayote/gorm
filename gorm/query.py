@@ -133,22 +133,12 @@ class QueryEngine(object):
         for (k, v) in self.sql('global_items'):
             yield (json_load(k), json_load(v))
 
-    def global_ins(self, key, value):
-        """Set ``key=value`` by inserting a record."""
-        (key, value) = map(json_dump, (key, value))
-        return self.sql('global_ins', key, value)
-
-    def global_upd(self, key, value):
-        """Set ``key=value`` by updating an existing record."""
-        (key, value) = map(json_dump, (key, value))
-        return self.sql('global_upd', key, value)
-
     def global_set(self, key, value):
         (key, value) = map(json_dump, (key, value))
         try:
             return self.sql('global_ins', key, value)
         except IntegrityError:
-            return self.sql('global_upd', key, value)
+            return self.sql('global_upd', value, key)
 
     def global_del(self, key):
         """Delete the global record for the key."""
