@@ -507,10 +507,11 @@ class QueryEngine(object):
                 self.globl['rev'] = 0
             return
         from sqlite3 import OperationalError
+        cursor = self.connection.cursor()
         try:
-            self.cursor.execute('SELECT * FROM global;')
+            cursor.execute('SELECT * FROM global;')
         except OperationalError:
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE TABLE global ("
                 "key TEXT NOT NULL PRIMARY KEY, "
                 "value TEXT)"
@@ -520,9 +521,9 @@ class QueryEngine(object):
         if 'rev' not in self.globl:
             self.globl['rev'] = 0
         try:
-            self.cursor.execute('SELECT * FROM branches;')
+            cursor.execute('SELECT * FROM branches;')
         except OperationalError:
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE TABLE branches ("
                 "branch TEXT NOT NULL DEFAULT 'master', "
                 "parent TEXT NOT NULL DEFAULT 'master', "
@@ -531,13 +532,13 @@ class QueryEngine(object):
                 "FOREIGN KEY(parent) REFERENCES branches(branch)"
                 ");"
             )
-            self.cursor.execute(
+            cursor.execute(
                 "INSERT INTO branches DEFAULT VALUES;"
             )
         try:
-            self.cursor.execute('SELECT * FROM graphs;')
+            cursor.execute('SELECT * FROM graphs;')
         except OperationalError:
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE TABLE graphs ("
                 "graph TEXT NOT NULL, "
                 "type TEXT NOT NULL DEFAULT 'Graph', "
@@ -547,9 +548,9 @@ class QueryEngine(object):
                 ");"
             )
         try:
-            self.cursor.execute('SELECT * FROM graph_val;')
+            cursor.execute('SELECT * FROM graph_val;')
         except OperationalError:
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE TABLE graph_val ("
                 "graph TEXT NOT NULL, "
                 "key TEXT NOT NULL, "
@@ -561,14 +562,14 @@ class QueryEngine(object):
                 "FOREIGN KEY(branch) REFERENCES branches(branch))"
                 ";"
             )
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE INDEX graph_val_idx ON graph_val(graph, key)"
                 ";"
             )
         try:
-            self.cursor.execute('SELECT * FROM nodes;')
+            cursor.execute('SELECT * FROM nodes;')
         except OperationalError:
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE TABLE nodes ("
                 "graph TEXT NOT NULL, "
                 "node TEXT NOT NULL, "
@@ -580,14 +581,14 @@ class QueryEngine(object):
                 "FOREIGN KEY(branch) REFERENCES branches(branch))"
                 ";"
             )
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE INDEX nodes_idx ON nodes(graph, node)"
                 ";"
             )
         try:
-            self.cursor.execute('SELECT * FROM node_val;')
+            cursor.execute('SELECT * FROM node_val;')
         except OperationalError:
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE TABLE node_val ("
                 "graph TEXT NOT NULL, "
                 "node TEXT NOT NULL, "
@@ -600,13 +601,13 @@ class QueryEngine(object):
                 "FOREIGN KEY(branch) REFERENCES branches(branch))"
                 ";"
             )
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE INDEX node_val_idx ON node_val(graph, node, key);"
             )
         try:
-            self.cursor.execute('SELECT * FROM edges;')
+            cursor.execute('SELECT * FROM edges;')
         except OperationalError:
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE TABLE edges ("
                 "graph TEXT NOT NULL, "
                 "nodeA TEXT NOT NULL, "
@@ -621,14 +622,14 @@ class QueryEngine(object):
                 "FOREIGN KEY(branch) REFERENCES branches(branch))"
                 ";"
             )
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE INDEX edges_idx ON edges(graph, nodeA, nodeB, idx)"
                 ";"
             )
         try:
-            self.cursor.execute('SELECT * FROM edge_val;')
+            cursor.execute('SELECT * FROM edge_val;')
         except OperationalError:
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE TABLE edge_val ("
                 "graph TEXT NOT NULL, "
                 "nodeA TEXT NOT NULL, "
@@ -644,7 +645,7 @@ class QueryEngine(object):
                 "FOREIGN KEY(branch) REFERENCES branches(branch))"
                 ";"
             )
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE INDEX edge_val_idx ON "
                 "edge_val(graph, nodeA, nodeB, idx, key)"
                 ";"
