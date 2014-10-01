@@ -21,13 +21,14 @@ class ORM(object):
             alchemy=True,
             connect_args={},
             obranch=None,
-            orev=None
+            orev=None,
+            query_engine_class=QueryEngine
     ):
         """Make a SQLAlchemy engine if possible, else a sqlite3 connection. In
         either case, begin a transaction.
 
         """
-        self.db = QueryEngine(dbstring, connect_args, alchemy)
+        self.db = query_engine_class(dbstring, connect_args, alchemy)
         self._obranch = obranch
         self._orev = orev
         self._branches = {}
