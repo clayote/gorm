@@ -92,10 +92,12 @@ class QueryEngine(object):
 
     def have_graph(self, graph):
         """Return whether I have a graph by this name."""
+        graph = json_dump(graph)
         return bool(self.sql('ctgraph', graph).fetchone()[0])
 
     def new_graph(self, graph, typ):
         """Declare a new graph by this name of this type."""
+        graph = json_dump(graph)
         return self.sql('new_graph', graph, typ)
 
     def del_graph(self, graph):
@@ -109,6 +111,7 @@ class QueryEngine(object):
 
     def graph_type(self, graph):
         """What type of graph is this?"""
+        graph = json_dump(graph)
         return self.sql('graph_type', graph).fetchone()[0]
 
     def have_branch(self, branch):
