@@ -42,9 +42,7 @@ class QueryEngine(object):
             self.engine = create_engine(dbstring, connect_args=connect_args)
             self.alchemist = Alchemist(self.engine)
             self.transaction = self.alchemist.conn.begin()
-            self.cursor = self.alchemist.conn
             self.commit = self.engine.commit
-            self.close = self.engine.close
 
         def lite_init():
             from sqlite3 import connect
@@ -52,7 +50,6 @@ class QueryEngine(object):
             self.strings = gorm.sql
             self.connection = connect(dbstring.lstrip('sqlite:///'))
             self.commit = self.connection.commit
-            self.close = self.connection.close
 
         if alchemy:
             try:
@@ -653,3 +650,16 @@ class QueryEngine(object):
                 "edge_val(graph, nodeA, nodeB, idx, key)"
                 ";"
             )
+
+    def commit(self):
+        if hasattr(self, 'transaction'):
+            self.transaction.commit()
+        else:
+            self.connection.commit()
+
+    def close(self):
+        self.commit()
+        if hasattr(self, 'engine'):
+            self.engine.close()
+        else:
+            self.connection.close()
