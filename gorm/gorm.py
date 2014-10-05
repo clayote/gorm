@@ -81,7 +81,9 @@ class ORM(object):
     @property
     def branch(self):
         """Return the global value ``branch``, or ``self._obranch`` if it's
-        set"""
+        set
+
+        """
         if self._obranch is not None:
             return self._obranch
         return self.db.globl['branch']
@@ -141,16 +143,15 @@ class ORM(object):
         assert(self.rev == v)
 
     def commit(self):
+        """Alias of ``self.db.commit``"""
         self.db.commit()
 
     def close(self):
+        """Alias of ``self.db.close``"""
         self.db.close()
 
     def initdb(self):
-        """Create the database schema that I use, and put the (branch, rev)
-        cursor at ('master', 0).
-
-        """
+        """Alias of ``self.db.initdb``"""
         self.db.initdb()
 
     def _init_graph(self, name, type_s='Graph'):
@@ -215,8 +216,9 @@ class ORM(object):
 
     def _active_branches(self, branch=None, rev=None):
         """Private use. Iterate over (branch, rev) pairs, where the branch is
-        a descendant of the previous (ending at 'master'), and the rev
-        is the latest revision in the branch that matters.
+        a descendant of the previous (starting with whatever branch is
+        presently active and ending at 'master'), and the rev is the
+        latest revision in the branch that matters.
 
         """
         if branch is None:
@@ -225,4 +227,3 @@ class ORM(object):
             rev = self.rev
         for (b, r) in self.db.active_branches(branch, rev):
             yield (b, r)
-

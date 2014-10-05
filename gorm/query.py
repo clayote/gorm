@@ -1,3 +1,10 @@
+# This file is part of gorm, an object relational mapper for graphs.
+# Copyright (c) 2014 ZacharySpector@gmail.com
+"""Wrapper to run SQL queries in a lightly abstracted way, such that
+code that's more to do with the queries than with the data per se
+doesn't pollute the other files so much.
+
+"""
 from collections import MutableMapping
 from sqlite3 import IntegrityError as sqliteIntegError
 
@@ -113,6 +120,17 @@ class QueryEngine(object):
             )
 
     def active_branches(self, branch, rev):
+        """Yield a series of ``(branch, rev)`` pairs, starting with the
+        ``branch`` and ``rev`` provided; proceeding to the parent
+        branch and the revision therein when the provided branch
+        began; and recursing through the entire genealogy of branches
+        until we reach the branch 'master'.
+
+        Though not private, this is a utility function that is
+        unlikely to be useful unless you're adding functionality to
+        gorm.
+
+        """
         yield (branch, rev)
         while branch != 'master':
             if branch not in self._branches:
@@ -170,6 +188,10 @@ class QueryEngine(object):
             yield (json_load(k), json_load(v))
 
     def global_set(self, key, value):
+        """Set ``key`` to ``value`` globally (not at any particular branch or
+        revision)
+
+        """
         (key, value) = map(json_dump, (key, value))
         try:
             return self.sql('global_ins', key, value)
@@ -355,8 +377,8 @@ class QueryEngine(object):
             )
 
     def edges_extant(self, graph, branch, rev):
-        """Return an iterable of nodes that have edges from them, in this graph, at
-        this revision.
+        """Return an iterable of nodes that have edges from them, in this
+        graph, at this revision.
 
         """
         graph = json_dump(graph)
@@ -502,6 +524,10 @@ class QueryEngine(object):
             )
 
     def edge_val_del(self, graph, nodeA, nodeB, idx, key, branch, rev):
+        """Declare that the key no longer applies to this edge, as of this
+        branch and revision.
+
+        """
         (graph, nodeA, nodeB, key) = map(
             json_dump,
             (graph, nodeA, nodeB, key)
@@ -532,11 +558,11 @@ class QueryEngine(object):
             )
 
     def initdb(self):
+        """Create tables and indices."""
         if hasattr(self, 'alchemist'):
             self.alchemist.meta.create_all(self.engine)
             if 'branch' not in self.globl:
                 self.globl['branch'] = 'master'
-            assert('branch' in self.globl)
             if 'rev' not in self.globl:
                 self.globl['rev'] = 0
             return
@@ -686,12 +712,14 @@ class QueryEngine(object):
             )
 
     def commit(self):
+        """Commit the transaction"""
         if hasattr(self, 'transaction'):
             self.transaction.commit()
         else:
             self.connection.commit()
 
     def close(self):
+        """Commit the transaction, then close the engine or connection"""
         self.commit()
         if hasattr(self, 'engine'):
             self.engine.close()
