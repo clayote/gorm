@@ -149,12 +149,22 @@ index_edge_val = Index(
 
 
 class Alchemist(object):
+    """Holds an engine and runs queries on it.
+
+    """
     def __init__(self, engine):
+        """Open a connection.
+
+        Store a pointer to the metadata object object locally, for
+        convenience.
+
+        """
         self.engine = engine
         self.conn = self.engine.connect()
         self.meta = meta
 
     def ctbranch(self, branch):
+        """Query to count the number of branches that exist."""
         if not hasattr(self, '_ctbranch_compiled'):
             self._ctbranch_compiled = select(
                 [func.COUNT(table_branches.c.branch)]
@@ -167,6 +177,7 @@ class Alchemist(object):
         )
 
     def ctgraph(self, graph):
+        """Query to count the number of graphs that have been created."""
         if not hasattr(self, '_ctgraph_compiled'):
             self._ctgraph_compiled = select(
                 [func.COUNT(table_graphs.c.graph)]
@@ -179,6 +190,7 @@ class Alchemist(object):
         )
 
     def allbranch(self):
+        """Iterate over all available branch data."""
         if not hasattr(self, '_allbranch_compiled'):
             self._allbranch_compiled = select(
                 [
@@ -192,6 +204,7 @@ class Alchemist(object):
         )
 
     def global_get(self, key):
+        """Get the value for a global key."""
         if not hasattr(self, '_global_get_compiled'):
             self._global_get_compiled = select(
                 [table_global.c.value]
@@ -204,6 +217,7 @@ class Alchemist(object):
         )
 
     def global_items(self):
+        """Iterate over key-value pairs set globally."""
         if not hasattr(self, '_global_items_compiled'):
             self._global_items_compiled = select(
                 [
@@ -216,6 +230,7 @@ class Alchemist(object):
         )
 
     def ctglobal(self):
+        """Count keys set globally."""
         if not hasattr(self, '_ctglobal_compiled'):
             self._ctglobal_compiled = select(
                 [func.COUNT(table_global.c.key)]
@@ -225,6 +240,7 @@ class Alchemist(object):
         )
 
     def new_graph(self, graph, typ):
+        """Create a graph of a given type."""
         if not hasattr(self, '_new_graph_compiled'):
             self._new_graph_compiled = table_graphs.insert().values(
                 graph=bindparam('graph'),
@@ -237,6 +253,7 @@ class Alchemist(object):
         )
 
     def graph_type(self, graph):
+        """Fetch the type of the named graph."""
         if not hasattr(self, '_graph_type_compiled'):
             self._graph_type_compiled = select(
                 [table_graphs.c.type]
@@ -249,6 +266,10 @@ class Alchemist(object):
         )
 
     def new_branch(self, branch, parent, parent_rev):
+        """Declare that the branch ``branch`` is a child of ``parent``
+        starting at revision ``parent_rev``.
+
+        """
         if not hasattr(self, '_new_branch_compiled'):
             self._new_branch_compiled = table_branches.insert().values(
                 branch=bindparam('branch'),
@@ -263,6 +284,7 @@ class Alchemist(object):
         )
 
     def del_edge_val_graph(self, graph):
+        """Delete all edge attributes from ``graph``."""
         if not hasattr(self, '_del_edge_val_graph_compiled'):
             self._del_edge_val_graph_compiled = (
                 table_edge_val.delete().where(
@@ -275,6 +297,7 @@ class Alchemist(object):
         )
 
     def del_node_val_graph(self, graph):
+        """Delete all node attributes from ``graph``."""
         if not hasattr(self, '_del_node_val_graph_compiled'):
             self._del_node_val_graph_compiled = table_node_val.delete().where(
                 table_node_val.c.graph == bindparam('graph')
@@ -285,6 +308,7 @@ class Alchemist(object):
         )
 
     def del_node_graph(self, graph):
+        """Delete all nodes from ``graph``."""
         if not hasattr(self, '_del_node_graph_compiled'):
             self._del_node_graph_compiled = table_nodes.delete().where(
                 table_nodes.c.graph == bindparam('graph')
@@ -295,6 +319,7 @@ class Alchemist(object):
         )
 
     def del_graph(self, graph):
+        """Delete the graph header."""
         if not hasattr(self, '_del_graph_compiled'):
             self._del_graph_compiled = table_graphs.delete().where(
                 table_graphs.c.graph == bindparam('graph')
@@ -305,6 +330,10 @@ class Alchemist(object):
         )
 
     def parrev(self, branch):
+        """Fetch the revision at which ``branch`` forks off from its
+        parent.
+
+        """
         if not hasattr(self, '_parrev_compiled'):
             self._parrev_compiled = select(
                 [table_branches.c.parent_rev]
@@ -317,6 +346,10 @@ class Alchemist(object):
         )
 
     def parparrev(self, branch):
+        """Fetch the name of ``branch``'s parent, and the revision at which
+        they part.
+
+        """
         if not hasattr(self, '_parparrev_compiled'):
             self._parparrev_compiled = select(
                 [table_branches.c.parent, table_branches.c.parent_rev]
@@ -329,6 +362,10 @@ class Alchemist(object):
         )
 
     def global_ins(self, key, value):
+        """Insert a record into the globals table indicating that
+        ``key=value``.
+
+        """
         if not hasattr(self, '_global_ins_compiled'):
             self._global_ins_compiled = table_global.insert().values(
                 key=bindparam('k'),
@@ -341,6 +378,10 @@ class Alchemist(object):
         )
 
     def global_upd(self, key, value):
+        """Update the existing global record for ``key`` so that it is set to
+        ``value``.
+
+        """
         if not hasattr(self, '_global_upd_compiled'):
             self._global_upd_compiled = table_global.update().values(
                 value=bindparam('v')
@@ -354,6 +395,7 @@ class Alchemist(object):
         )
 
     def global_del(self, key):
+        """Delete the record for global variable ``key``."""
         if not hasattr(self, '_global_del_compiled'):
             self._global_del_compiled = table_global.delete().where(
                 key=bindparam('k')
@@ -364,6 +406,10 @@ class Alchemist(object):
         )
 
     def _recent_nodes(self, node=False):
+        """Private method. Returns a query to get the most recent info on
+        what nodes exist in some graph at some revision.
+
+        """
         hirev_where = [
             table_nodes.c.graph == bindparam('g'),
             table_nodes.c.branch == bindparam('b'),
@@ -408,6 +454,7 @@ class Alchemist(object):
         )
 
     def nodes_extant(self, graph, branch, rev):
+        """Query for nodes that exist in ``graph`` at ``(branch, rev)``."""
         if not hasattr(self, '_nodes_extant_compiled'):
             rn = self._recent_nodes()
             self._nodes_extant_compiled = select(
@@ -423,6 +470,10 @@ class Alchemist(object):
         )
 
     def node_exists(self, graph, node, branch, rev):
+        """Query for whether or not ``node`` exists in ``graph`` at ``(branch,
+        rev)``.
+
+        """
         if not hasattr(self, '_node_exists_compiled'):
             rn = self._recent_nodes(node=True)
             self._node_exists_compiled = select(
@@ -437,6 +488,10 @@ class Alchemist(object):
         )
 
     def exist_node_ins(self, graph, node, branch, rev, extant):
+        """Insert a record to indicate whether or not ``node`` exists in
+        ``graph`` at ``(branch, rev)``.
+
+        """
         if not hasattr(self, '_exist_node_ins_compiled'):
             self._exist_node_ins_compiled = (
                 table_nodes.insert().values(
@@ -457,6 +512,11 @@ class Alchemist(object):
         )
 
     def exist_node_upd(self, extant, graph, node, branch, rev):
+        """Update the record previously inserted by ``exist_node_ins``,
+        indicating whether ``node`` exists in ``graph`` at ``(branch,
+        rev)``.
+
+        """
         if not hasattr(self, '_exist_node_upd_compiled'):
             self._exist_node_upd_compiled = table_nodes.update().values(
                 extant=bindparam('x')
@@ -478,6 +538,10 @@ class Alchemist(object):
         )
 
     def _recent_graph_val(self, key=False):
+        """Private method. Return a query for the most recent graph_val
+        records in some graph.
+
+        """
         hirev_where = [
             table_graph_val.c.graph == bindparam('g'),
             table_graph_val.c.branch == bindparam('b'),
@@ -520,6 +584,10 @@ class Alchemist(object):
         )
 
     def graph_val_items(self, graph, branch, rev):
+        """Query the most recent keys and values for the attributes of
+        ``graph`` at ``(branch, rev)``.
+
+        """
         if not hasattr(self, '_graph_val_items_compiled'):
             rgv = self._recent_graph_val()
             self._graph_val_items_compiled = select(
@@ -533,6 +601,10 @@ class Alchemist(object):
         )
 
     def graph_val_get(self, graph, key, branch, rev):
+        """Query the most recent value for ``graph``'s ``key`` as of
+        ``(branch, rev)``
+
+        """
         if not hasattr(self, '_graph_val_get_compiled'):
             rgv = self._recent_graph_val(key=True)
             self._graph_val_get_compiled = select(
@@ -547,6 +619,10 @@ class Alchemist(object):
         )
 
     def graph_val_ins(self, graph, key, branch, rev, value):
+        """Insert a record to indicate that ``key=value`` on ``graph`` as of
+        ``(branch, rev)``
+
+        """
         if not hasattr(self, '_graph_val_ins_compiled'):
             self._graph_val_ins_compiled = (
                 table_graph_val.insert().values(
@@ -567,6 +643,7 @@ class Alchemist(object):
         )
 
     def graph_val_upd(self, value, graph, key, branch, rev):
+        """Update the record previously inserted by ``graph_val_ins``"""
         if not hasattr(self, '_graph_val_upd_compiled'):
             self._graph_val_upd_compiled = table_graph_val.update().values(
                 value=bindparam('v')
@@ -588,6 +665,10 @@ class Alchemist(object):
         )
 
     def _recent_node_val(self, key=False):
+        """Private method. Return a query for getting the most recent value of
+        keys on a node.
+
+        """
         hirev_where = [
             table_node_val.c.graph == bindparam('g'),
             table_node_val.c.node == bindparam('n'),
@@ -635,6 +716,10 @@ class Alchemist(object):
         )
 
     def node_val_items(self, graph, node, branch, rev):
+        """Get all the most recent values of all the keys on ``node`` in
+        ``graph`` as of ``(branch, rev)``
+
+        """
         if not hasattr(self, '_node_val_items_compiled'):
             rnv = self._recent_node_val()
             self._node_val_items_compiled = select(
@@ -649,6 +734,10 @@ class Alchemist(object):
         )
 
     def node_val_get(self, graph, node, key, branch, rev):
+        """Get the most recent value for ``key`` on ``node`` in ``graph`` as
+        of ``(branch, rev)``
+
+        """
         if not hasattr(self, '_node_val_get_compiled'):
             rnv = self._recent_node_val(key=True)
             self._node_val_get_compiled = select(
@@ -666,6 +755,10 @@ class Alchemist(object):
         )
 
     def node_val_ins(self, graph, node, key, branch, rev, value):
+        """Insert a record to indicate that the value of ``key`` on ``node``
+        in ``graph`` as of ``(branch, rev)`` is ``value``.
+
+        """
         if not hasattr(self, '_node_val_ins_compiled'):
             self._node_val_ins_compiled = table_node_val.insert().values(
                 graph=bindparam('g'),
@@ -686,6 +779,7 @@ class Alchemist(object):
         )
 
     def node_val_upd(self, value, graph, node, key, branch, rev):
+        """Update the record previously inserted by ``node_val_ins``"""
         if not hasattr(self, '_node_val_upd_compiled'):
             self._node_val_upd_compiled = table_node_val.update().values(
                 value=bindparam('v')
@@ -709,6 +803,10 @@ class Alchemist(object):
         )
 
     def _edges_recent(self, orig=False, dest=False, idx=False):
+        """Private method. Return a query to get the most recent edge
+        existence data for some graph.
+
+        """
         hirev_where = [
             table_edges.c.graph == bindparam('g'),
             table_edges.c.branch == bindparam('b'),
@@ -763,6 +861,10 @@ class Alchemist(object):
         )
 
     def edge_exists(self, graph, nodeA, nodeB, idx, branch, rev):
+        """Query for whether a particular edge exists at a particular
+        ``(branch, rev)``
+
+        """
         if not hasattr(self, '_edge_exists_compiled'):
             self._edge_extant_compiled = select(
                 [self._edges_recent(orig=True, dest=True, idx=True).c.extant]
@@ -778,6 +880,10 @@ class Alchemist(object):
         )
 
     def edges_extant(self, graph, branch, rev):
+        """Query for all edges that exist in ``graph`` as of ``(branch,
+        rev)``
+
+        """
         if not hasattr(self, '_edges_extant_compiled'):
             er = self._edges_recent()
             self._edges_extant_compiled = select(
@@ -791,6 +897,10 @@ class Alchemist(object):
         )
 
     def nodeAs(self, graph, nodeB, branch, rev):
+        """Query for edges that end at ``nodeB`` in ``graph`` as of ``(branch,
+        rev)``
+
+        """
         if not hasattr(self, '_nodeAs_compiled'):
             er = self._edges_recent(dest=True)
             self._nodeAs_compiled = select(
@@ -805,6 +915,10 @@ class Alchemist(object):
         )
 
     def nodeBs(self, graph, nodeA, branch, rev):
+        """Query for the nodes at which edges that originate from ``nodeA``
+        end.
+
+        """
         if not hasattr(self, '_nodeBs_compiled'):
             er = self._edges_recent(orig=True)
             self._nodeBs_compiled = select(
@@ -819,6 +933,11 @@ class Alchemist(object):
         )
 
     def multi_edges(self, graph, nodeA, nodeB, branch, rev):
+        """Query for all edges from ``nodeA`` to ``nodeB``. Only makes sense
+        if we're dealing with a :class:`MultiGraph` or
+        :class:`MultiDiGraph`.
+
+        """
         if not hasattr(self, '_multi_edges_compiled'):
             er = self._edges_recent(orig=True, dest=True)
             self._multi_edges_compiled = select(
@@ -834,6 +953,13 @@ class Alchemist(object):
         )
 
     def edge_exist_ins(self, graph, nodeA, nodeB, idx, branch, rev, extant):
+        """Indicate that there is (or isn't) an edge from ``nodeA`` to
+        ``nodeB`` in ``graph`` as of ``(branch, rev)``.
+
+        ``idx`` should be ``0`` unless ``graph`` is a
+        :class:`MultiGraph` or :class:`MultiDiGraph`.
+
+        """
         if not hasattr(self, '_edge_exist_ins_compiled'):
             self._edge_exist_ins_compiled = table_edges.insert().values(
                 graph=bindparam('g'),
@@ -856,6 +982,7 @@ class Alchemist(object):
         )
 
     def edge_exist_upd(self, extant, graph, nodeA, nodeB, idx, branch, rev):
+        """Update a record previously inserted with ``edge_exist_ins``."""
         if not hasattr(self, '_edge_exist_upd_compiled'):
             self._edge_exist_upd_compiled = table_edges.update().values(
                 extant=bindparam('x')
@@ -881,6 +1008,10 @@ class Alchemist(object):
         )
 
     def _edge_val_recent(self, key=False):
+        """Private method. Make a query for getting the most recent record
+        relevant to edge values of some edge.
+
+        """
         hirev_where = [
             table_edge_val.c.graph == bindparam('g'),
             table_edge_val.c.nodeA == bindparam('orig'),
@@ -937,6 +1068,10 @@ class Alchemist(object):
         )
 
     def edge_val_items(self, graph, nodeA, nodeB, idx, branch, rev):
+        """Iterate over key-value pairs that are set on an edge as of
+        ``(branch, rev)``
+
+        """
         if not hasattr(self, '_edge_val_items_compiled'):
             evr = self._edge_val_recent()
             self._edge_val_items_compiled = select(
@@ -953,6 +1088,10 @@ class Alchemist(object):
         )
 
     def edge_val_get(self, graph, nodeA, nodeB, idx, key, branch, rev):
+        """Get the value of a key on an edge that is relevant as of ``(branch,
+        rev)``
+
+        """
         if not hasattr(self, '_edge_val_get_compiled'):
             evr = self._edge_val_recent(key=True)
             self._edge_val_get_compiled = select(
@@ -972,6 +1111,10 @@ class Alchemist(object):
         )
 
     def edge_val_ins(self, graph, nodeA, nodeB, idx, key, branch, rev, value):
+        """Insert a record to indicate the value of a key on an edge as of
+        ``(branch, rev)``
+
+        """
         if not hasattr(self, '_edge_val_ins_compiled'):
             self._edge_val_ins_compiled = table_edge_val.insert().values(
                 graph=bindparam('g'),
@@ -996,6 +1139,7 @@ class Alchemist(object):
         )
 
     def edge_val_upd(self, value, graph, nodeA, nodeB, idx, key, branch, rev):
+        """Update a record previously inserted by ``edge_val_ins``"""
         if not hasattr(self, '_edge_val_upd_compiled'):
             self._edge_val_upd_compiled = table_edge_val.update().values(
                 value=bindparam('v')
