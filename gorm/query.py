@@ -14,41 +14,75 @@ IntegrityError = (alchemyIntegError, sqliteIntegError)
 
 
 class GlobalKeyValueStore(MutableMapping):
+    """A dict-like object that keeps its contents in a table.
+
+    Mostly this is for holding the current branch and revision.
+
+    """
     def __init__(self, qe):
+        """Remember the query engine."""
         self.qe = qe
 
     def __iter__(self):
-        for row in self.qe.global_items():
-            yield row
+        """Yield key field"""
+        for (k, v) in self.qe.global_items():
+            yield k
 
     def __len__(self):
+        """Count rows"""
         return self.qe.ctglobal()
 
     def __getitem__(self, k):
+        """Return value field corresponding to key field"""
         return self.qe.global_get(k)
 
     def __setitem__(self, k, v):
+        """Insert or update record with key ``k`` so it has value ``v``"""
         self.qe.global_set(k, v)
 
     def __delitem__(self, k):
+        """Delete record with key ``k``"""
         self.qe.global_del(k)
 
 
 class QueryEngine(object):
+    """Wrapper around either a DBAPI2.0 connection or an
+    Alchemist. Provides functions to run queries using either.
+
+    """
     def __init__(self, dbstring, connect_args, alchemy):
+        """If ``alchemy`` is True and ``dbstring`` is a legit database URI,
+        instantiate an Alchemist and start a transaction with
+        it. Otherwise use sqlite3.
+
+        You may pass an already created sqlalchemy :class:`Engine`
+        object in place of ``dbstring`` if you wish. I'll still create
+        my own transaction though.
+
+        """
         def alchem_init():
             from sqlalchemy import create_engine
+            from sqlalchemy.engine.base import Engine
             from gorm.alchemy import Alchemist
-            self.engine = create_engine(dbstring, connect_args=connect_args)
+            if isinstance(dbstring, Engine):
+                self.engine = dbstring
+            else:
+                self.engine = create_engine(
+                    dbstring,
+                    connect_args=connect_args
+                )
             self.alchemist = Alchemist(self.engine)
             self.transaction = self.alchemist.conn.begin()
             self.commit = self.engine.commit
 
         def lite_init():
-            from sqlite3 import connect
+            from sqlite3 import connect, Connection
             import gorm.sql
             self.strings = gorm.sql
-            self.connection = connect(dbstring.lstrip('sqlite:///'))
+            if isinstance(dbstring, Connection):
+                self.connection = dbstring
+            else:
+                self.connection = connect(dbstring.lstrip('sqlite:///'))
             self.commit = self.connection.commit
 
         if alchemy:
