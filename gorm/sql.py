@@ -1,3 +1,5 @@
+# This file is part of gorm, an object relational mapper for versioned graphs.
+# Copyright (C) 2014 Zachary Spector.
 ctbranch = "SELECT COUNT(*) FROM branches WHERE branch=?;"
 ctgraph = "SELECT COUNT(*) FROM graphs WHERE graph=?;"
 ctglobal = "SELECT COUNT(*) FROM global;"
