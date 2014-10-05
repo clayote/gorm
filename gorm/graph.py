@@ -1,3 +1,5 @@
+# This file is part of gorm, an object relational mapper for versioned graphs.
+# Copyright (C) 2014 Zachary Spector.
 import networkx
 from networkx.exception import NetworkXError
 from collections import MutableMapping
