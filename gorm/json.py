@@ -1,5 +1,6 @@
 # This file is part of gorm, an object relational mapper for versioned graphs.
 # Copyright (C) 2014 Zachary Spector.
+from collections import MutableMapping
 import json
 
 
@@ -62,3 +63,51 @@ def json_load(s):
     if s not in json_load_hints:
         json_load_hints[s] = dec_tuple(json.loads(s))
     return json_load_hints[s]
+
+
+def ismutable(v):
+    return (
+        isinstance(v, str) or
+        isinstance(v, int) or
+        isinstance(v, bool) or
+        isinstance(v, float) or
+        isinstance(v, tuple)
+    )
+
+
+class JSONWrapper(MutableMapping):
+    def __init__(self, outer, outkey):
+        self.outer = outer
+        self.outkey = outkey
+
+    def _get(self):
+        return self.outer._get(self.outkey)
+
+    def _set(self, v):
+        self.outer[self.outkey] = v
+
+    def __getattr__(self, attr):
+        return getattr(self._get(), attr)
+
+    def __iter__(self):
+        return iter(self.outer._get(self.outkey))
+
+    def __len__(self):
+        return len(self.outer._get(self.outkey))
+
+    def __getitem__(self, k):
+        r = self._get()[k]
+        if ismutable(r):
+            return JSONWrapper(self, k)
+        else:
+            return r
+
+    def __setitem__(self, k, v):
+        me = self._get()
+        me[k] = v
+        self._set(me)
+
+    def __delitem__(self, k):
+        me = self._get()
+        del me[k]
+        self._set(me)

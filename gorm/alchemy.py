@@ -147,6 +147,17 @@ index_edge_val = Index(
     table_edge_val.c.key
 )
 
+table = {
+    'global': table_global,
+    'branches': table_branches,
+    'graphs': table_graphs,
+    'graph_val': table_graph_val,
+    'nodes': table_nodes,
+    'node_val': table_node_val,
+    'edges': table_edges,
+    'edge_val': table_edge_val
+}
+
 
 class Alchemist(object):
     """Holds an engine and runs queries on it.
@@ -1163,3 +1174,4 @@ class Alchemist(object):
             b=branch,
             r=rev
         )
+

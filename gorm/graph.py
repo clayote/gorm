@@ -3,6 +3,7 @@
 import networkx
 from networkx.exception import NetworkXError
 from collections import MutableMapping
+from gorm.json import ismutable, JSONWrapper
 
 
 class GraphMapping(MutableMapping):
@@ -131,8 +132,7 @@ class Node(GraphMapping):
             self.gorm.rev
         )
 
-    def __getitem__(self, key):
-        """Get the value of the key at the present branch and rev"""
+    def _get(self, key):
         return self.gorm.db.node_val_get(
             self.graph.name,
             self.node,
@@ -140,6 +140,14 @@ class Node(GraphMapping):
             self.gorm.branch,
             self.gorm.rev
         )
+
+    def __getitem__(self, key):
+        """Get the value of the key at the present branch and rev"""
+        r = self._get(key)
+        if ismutable(r):
+            return JSONWrapper(self, key)
+        else:
+            return r
 
     def __setitem__(self, key, value):
         """Set key=value at the present branch and rev. Overwrite if
@@ -199,11 +207,7 @@ class Edge(GraphMapping):
             self.gorm.rev
         )
 
-    def __getitem__(self, key):
-        """Return the present value of the key, or raise KeyError if it's
-        unset
-
-        """
+    def _get(self, key):
         return self.gorm.db.edge_val_get(
             self.graph.name,
             self.nodeA,
@@ -213,6 +217,17 @@ class Edge(GraphMapping):
             self.gorm.branch,
             self.gorm.rev
         )
+
+    def __getitem__(self, key):
+        """Return the present value of the key, or raise KeyError if it's
+        unset
+
+        """
+        r = self._get(key)
+        if ismutable(r):
+            return JSONWrapper(self, key)
+        else:
+            return r
 
     def __setitem__(self, key, value):
         """Set a database record to say that key=value at the present branch

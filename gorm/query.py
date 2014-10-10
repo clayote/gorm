@@ -103,7 +103,7 @@ class QueryEngine(object):
         self.globl = GlobalKeyValueStore(self)
         self._branches = {}
 
-    def sql(self, stringname, *args):
+    def sql(self, stringname, *args, **kwargs):
         """Wrapper for the various prewritten or compiled SQL calls.
 
         First argument is the name of the query, either a key in
@@ -113,10 +113,17 @@ class QueryEngine(object):
 
         """
         if hasattr(self, 'alchemist'):
-            return getattr(self.alchemist, stringname)(*args)
+            return getattr(self.alchemist, stringname)(*args, **kwargs)
         else:
+            s = getattr(self.strings, stringname)
+            if callable(s):
+                qrystr = s(*args, **kwargs)
+            elif kwargs:
+                qrystr = s.format(**kwargs)
+            else:
+                qrystr = s
             return self.connection.cursor().execute(
-                getattr(self.strings, stringname), args
+                qrystr, args
             )
 
     def active_branches(self, branch, rev):
