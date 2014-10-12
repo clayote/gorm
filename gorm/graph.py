@@ -838,7 +838,7 @@ class GormGraph(object):
         self.graph.clear()
 
 
-class Graph(networkx.Graph, GormGraph):
+class Graph(GormGraph, networkx.Graph):
     """A version of the networkx.Graph class that stores its state in a
     database.
 
@@ -956,7 +956,7 @@ class DiGraph(GormGraph, networkx.DiGraph):
             assert(v in self.succ[u])
 
 
-class MultiGraph(networkx.MultiGraph, GormGraph):
+class MultiGraph(GormGraph, networkx.MultiGraph):
     """A version of the networkx.MultiGraph class that stores its state in a
     database.
 
@@ -974,7 +974,7 @@ class MultiGraph(networkx.MultiGraph, GormGraph):
         self.graph.update(attr)
 
 
-class MultiDiGraph(networkx.MultiDiGraph, GormGraph):
+class MultiDiGraph(GormGraph, networkx.MultiDiGraph):
     """A version of the networkx.MultiDiGraph class that stores its state in a
     database.
 

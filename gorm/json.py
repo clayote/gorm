@@ -66,7 +66,12 @@ def json_load(s):
 
 
 def ismutable(v):
-    return (
+    try:
+        if isinstance(v, long):
+            return False
+    except NameError:
+        pass
+    return not (
         isinstance(v, str) or
         isinstance(v, int) or
         isinstance(v, bool) or
