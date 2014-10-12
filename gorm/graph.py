@@ -46,6 +46,20 @@ class GraphMapping(MutableMapping):
             n += 1
         return n
 
+    def _get(self, key):
+        """Just load value from database and return"""
+        for (branch, rev) in self.gorm._active_branches():
+            try:
+                return self.gorm.db.graph_val_get(
+                    self.graph.name,
+                    key,
+                    branch,
+                    rev
+                )
+            except KeyError:
+                continue
+        raise KeyError("Key is not set, ever")
+
     def __getitem__(self, key):
         """If key is 'graph', return myself as a dict, else get the present
         value of the key and return that
@@ -55,12 +69,16 @@ class GraphMapping(MutableMapping):
             return dict(self)
         for (branch, rev) in self.gorm._active_branches():
             try:
-                return self.gorm.db.graph_val_get(
+                r = self.gorm.db.graph_val_get(
                     self.graph.name,
                     key,
                     branch,
                     rev
                 )
+                if ismutable(r):
+                    return JSONWrapper(self, key)
+                else:
+                    return r
             except KeyError:
                 continue
         raise KeyError("key is not set, ever")
@@ -838,7 +856,7 @@ class GormGraph(object):
         self.graph.clear()
 
 
-class Graph(networkx.Graph, GormGraph):
+class Graph(GormGraph, networkx.Graph):
     """A version of the networkx.Graph class that stores its state in a
     database.
 
@@ -956,7 +974,7 @@ class DiGraph(GormGraph, networkx.DiGraph):
             assert(v in self.succ[u])
 
 
-class MultiGraph(networkx.MultiGraph, GormGraph):
+class MultiGraph(GormGraph, networkx.MultiGraph):
     """A version of the networkx.MultiGraph class that stores its state in a
     database.
 
@@ -974,7 +992,7 @@ class MultiGraph(networkx.MultiGraph, GormGraph):
         self.graph.update(attr)
 
 
-class MultiDiGraph(networkx.MultiDiGraph, GormGraph):
+class MultiDiGraph(GormGraph, networkx.MultiDiGraph):
     """A version of the networkx.MultiDiGraph class that stores its state in a
     database.
 

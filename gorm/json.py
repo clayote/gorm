@@ -66,7 +66,12 @@ def json_load(s):
 
 
 def ismutable(v):
-    return (
+    try:
+        if isinstance(v, long):
+            return False
+    except NameError:
+        pass
+    return not (
         isinstance(v, str) or
         isinstance(v, int) or
         isinstance(v, bool) or
@@ -80,8 +85,13 @@ class JSONWrapper(MutableMapping):
         self.outer = outer
         self.outkey = outkey
 
-    def _get(self):
-        return self.outer._get(self.outkey)
+    def __contains__(self, wot):
+        return self._get().__contains__(wot)
+
+    def _get(self, k=None):
+        if k is None:
+            return self.outer._get(self.outkey)
+        return self._get()[k]
 
     def _set(self, v):
         self.outer[self.outkey] = v
@@ -111,3 +121,12 @@ class JSONWrapper(MutableMapping):
         me = self._get()
         del me[k]
         self._set(me)
+
+    def __str__(self):
+        return self._get().__str__()
+
+    def __repr__(self):
+        return self._get().__repr__()
+
+    def __eq__(self, other):
+        return self._get() == other

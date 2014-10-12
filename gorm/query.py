@@ -80,7 +80,6 @@ class QueryEngine(object):
                 )
             self.alchemist = Alchemist(self.engine)
             self.transaction = self.alchemist.conn.begin()
-            self.commit = self.engine.commit
 
         def lite_init():
             from sqlite3 import connect, Connection
@@ -90,7 +89,6 @@ class QueryEngine(object):
                 self.connection = dbstring
             else:
                 self.connection = connect(dbstring.lstrip('sqlite:///'))
-            self.commit = self.connection.commit
 
         if alchemy:
             try:
