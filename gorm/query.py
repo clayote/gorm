@@ -90,7 +90,7 @@ class QueryEngine(object):
             if isinstance(dbstring, Connection):
                 self.connection = dbstring
             else:
-                self.connection = connect(dbstring.lstrip('sqlite:///'))
+                self.connection = connect(dbstring.replace('sqlite:///', ''))
 
         if alchemy:
             try:
