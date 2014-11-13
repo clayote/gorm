@@ -100,10 +100,10 @@ class JSONWrapper(MutableMapping):
         return getattr(self._get(), attr)
 
     def __iter__(self):
-        return iter(self.outer._get(self.outkey))
+        return iter(self._get())
 
     def __len__(self):
-        return len(self.outer._get(self.outkey))
+        return len(self._get())
 
     def __getitem__(self, k):
         r = self._get()[k]
@@ -130,3 +130,12 @@ class JSONWrapper(MutableMapping):
 
     def __eq__(self, other):
         return self._get() == other
+
+    def __list__(self):
+        return list(self._get())
+
+    def __dict__(self):
+        return dict(self._get())
+
+    def copy(self):
+        return self._get().copy()
