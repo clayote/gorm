@@ -17,7 +17,9 @@ except ImportError:
     pass
 
 
-IntegrityError = (alchemyIntegError, sqliteIntegError)
+IntegrityError = (
+    alchemyIntegError, sqliteIntegError
+) if alchemyIntegError is not None else sqliteIntegError
 
 
 class GlobalKeyValueStore(MutableMapping):
@@ -481,7 +483,7 @@ class QueryEngine(object):
             for row in self.sql(
                 'edge_val_items', graph, nodeA, nodeB, idx, b, r
             ):
-                if row[0] not in seen and row[1] is not None:
+                if row[0] not in seen:
                     yield json_load(row[0])
                 seen.add(row[0])
 
