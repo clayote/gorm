@@ -29,12 +29,7 @@ class GraphMapping(MutableMapping):
     def __contains__(self, k):
         """Do I have a value for this key right now?"""
         try:
-            self.gorm.db.graph_val_get(
-                self.graph.name,
-                k,
-                self.gorm.branch,
-                self.gorm.rev
-            )
+            self._get(k)
             return True
         except KeyError:
             return False
