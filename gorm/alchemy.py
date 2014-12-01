@@ -171,193 +171,81 @@ index = {
 
 
 def compile_sql(dialect):
-    hirev_nodes_general = select(
-        [
+    def hirev_nodes_join(wheres):
+        hirev = select(
+            [
+                table_nodes.c.graph,
+                table_nodes.c.node,
+                table_nodes.c.branch,
+                func.MAX(table_nodes.c.rev).label('rev')
+            ]
+        ).where(and_(*wheres)).group_by(
             table_nodes.c.graph,
             table_nodes.c.node,
-            table_nodes.c.branch,
-            func.MAX(table_nodes.c.rev).label('rev')
-        ]
-    ).where(
-        and_(
-            table_nodes.c.graph == bindparam('g'),
-            table_nodes.c.branch == bindparam('b'),
-            table_nodes.c.rev <= bindparam('r')
+            table_nodes.c.branch
+        ).alias('hirev')
+        return table_nodes.join(
+            hirev,
+            and_(
+                table_nodes.c.graph == hirev.c.graph,
+                table_nodes.c.node == hirev.c.node,
+                table_nodes.c.branch == hirev.c.branch,
+                table_nodes.c.rev == hirev.c.rev
+            )
         )
-    ).group_by(
-        table_nodes.c.graph,
-        table_nodes.c.node,
-        table_nodes.c.branch
-    ).alias('hirev')
 
-    rnj_general = table_nodes.join(
-        hirev_nodes_general,
-        and_(
-            table_nodes.c.graph == hirev_nodes_general.c.graph,
-            table_nodes.c.node == hirev_nodes_general.c.node,
-            table_nodes.c.branch == hirev_nodes_general.c.branch,
-            table_nodes.c.rev == hirev_nodes_general.c.rev
-        )
-    )
-
-    hirev_nodes_specific = select(
-        [
-            table_nodes.c.graph,
-            table_nodes.c.node,
-            table_nodes.c.branch,
-            func.MAX(table_nodes.c.rev).label('rev')
-        ]
-    ).where(
-        and_(
-            table_nodes.c.graph == bindparam('g'),
-            table_nodes.c.node == bindparam('n'),
-            table_nodes.c.branch == bindparam('b'),
-            table_nodes.c.rev <= bindparam('r')
-        )
-    ).group_by(
-        table_nodes.c.graph,
-        table_nodes.c.node,
-        table_nodes.c.branch
-    ).alias('hirev')
-
-    rnj_specific = table_nodes.join(
-        hirev_nodes_specific,
-        and_(
-            table_nodes.c.graph == hirev_nodes_specific.c.graph,
-            table_nodes.c.node == hirev_nodes_specific.c.node,
-            table_nodes.c.branch == hirev_nodes_specific.c.branch,
-            table_nodes.c.rev == hirev_nodes_specific.c.rev
-        )
-    )
-
-    hirev_graph_val_general = select(
-        [
+    def hirev_graph_val_join(wheres):
+        hirev = select(
+            [
+                table_graph_val.c.graph,
+                table_graph_val.c.key,
+                table_graph_val.c.branch,
+                func.MAX(table_graph_val.c.rev).label('rev')
+            ]
+        ).where(and_(*wheres)).group_by(
             table_graph_val.c.graph,
             table_graph_val.c.key,
-            table_graph_val.c.branch,
-            func.MAX(table_graph_val.c.rev).label('rev')
-        ]
-    ).where(
-        and_(
-            table_graph_val.c.graph == bindparam('g'),
-            table_graph_val.c.branch == bindparam('b'),
-            table_graph_val.c.rev <= bindparam('r')
+            table_graph_val.c.branch
+        ).alias('hirev')
+        return table_graph_val.join(
+            hirev,
+            and_(
+                table_graph_val.c.graph == hirev.c.graph,
+                table_graph_val.c.key == hirev.c.key,
+                table_graph_val.c.branch == hirev.c.branch,
+                table_graph_val.c.rev == hirev.c.rev
+            )
         )
-    ).group_by(
-        table_graph_val.c.graph,
-        table_graph_val.c.key,
-        table_graph_val.c.branch
-    ).alias('hirev')
 
-    rgvj_general = table_graph_val.join(
-        hirev_graph_val_general,
-        and_(
-            table_graph_val.c.graph == hirev_graph_val_general.c.graph,
-            table_graph_val.c.key == hirev_graph_val_general.c.key,
-            table_graph_val.c.branch == hirev_graph_val_general.c.branch,
-            table_graph_val.c.rev == hirev_graph_val_general.c.rev
-        )
-    )
-
-    hirev_graph_val_specific = select(
-        [
-            table_graph_val.c.graph,
-            table_graph_val.c.key,
-            table_graph_val.c.branch,
-            func.MAX(table_graph_val.c.rev).label('rev')
-        ]
-    ).where(
-        and_(
-            table_graph_val.c.graph == bindparam('g'),
-            table_graph_val.c.key == bindparam('k'),
-            table_graph_val.c.branch == bindparam('b'),
-            table_graph_val.c.rev <= bindparam('r')
-        )
-    ).group_by(
-        table_graph_val.c.graph,
-        table_graph_val.c.key,
-        table_graph_val.c.branch
-    ).alias('hirev')
-
-    rgvj_specific = table_graph_val.join(
-        hirev_graph_val_specific,
-        and_(
-            table_graph_val.c.graph == hirev_graph_val_specific.c.graph,
-            table_graph_val.c.key == hirev_graph_val_specific.c.key,
-            table_graph_val.c.branch == hirev_graph_val_specific.c.branch,
-            table_graph_val.c.rev == hirev_graph_val_specific.c.rev
-        )
-    )
-
-    node_val_hirev_general = select(
-        [
+    def node_val_hirev_join(wheres):
+        hirev = select(
+            [
+                table_node_val.c.graph,
+                table_node_val.c.node,
+                table_node_val.c.branch,
+                table_node_val.c.key,
+                func.MAX(table_node_val.c.rev).label('rev')
+            ]
+        ).where(and_(*wheres)).group_by(
             table_node_val.c.graph,
             table_node_val.c.node,
             table_node_val.c.branch,
-            table_node_val.c.key,
-            func.MAX(table_node_val.c.rev).label('rev')
-        ]
-    ).where(
-        and_(
-            table_node_val.c.graph == bindparam('g'),
-            table_node_val.c.node == bindparam('n'),
-            table_node_val.c.branch == bindparam('b'),
-            table_node_val.c.rev <= bindparam('r')
-        )
-    ).group_by(
-        table_node_val.c.graph,
-        table_node_val.c.node,
-        table_node_val.c.branch,
-        table_node_val.c.key
-    ).alias('hirev')
+            table_node_val.c.key
+        ).alias('hirev')
 
-    rnvj_general = table_node_val.join(
-        node_val_hirev_general,
-        and_(
-            table_node_val.c.graph == node_val_hirev_general.c.graph,
-            table_node_val.c.node == node_val_hirev_general.c.node,
-            table_node_val.c.key == node_val_hirev_general.c.key,
-            table_node_val.c.branch == node_val_hirev_general.c.branch,
-            table_node_val.c.rev == node_val_hirev_general.c.rev
+        return table_node_val.join(
+            hirev,
+            and_(
+                table_node_val.c.graph == hirev.c.graph,
+                table_node_val.c.node == hirev.c.node,
+                table_node_val.c.key == hirev.c.key,
+                table_node_val.c.branch == hirev.c.branch,
+                table_node_val.c.rev == hirev.c.rev
+            )
         )
-    )
 
-    node_val_hirev_specific = select(
-        [
-            table_node_val.c.graph,
-            table_node_val.c.node,
-            table_node_val.c.branch,
-            table_node_val.c.key,
-            func.MAX(table_node_val.c.rev).label('rev')
-        ]
-    ).where(
-        and_(
-            table_node_val.c.graph == bindparam('g'),
-            table_node_val.c.node == bindparam('n'),
-            table_node_val.c.key == bindparam('k'),
-            table_node_val.c.branch == bindparam('b'),
-            table_node_val.c.rev <= bindparam('r')
-        )
-    ).group_by(
-        table_node_val.c.graph,
-        table_node_val.c.node,
-        table_node_val.c.branch,
-        table_node_val.c.key
-    ).alias('hirev')
-
-    rnvj_specific = table_node_val.join(
-        node_val_hirev_specific,
-        and_(
-            table_node_val.c.graph == node_val_hirev_specific.c.graph,
-            table_node_val.c.node == node_val_hirev_specific.c.node,
-            table_node_val.c.key == node_val_hirev_specific.c.key,
-            table_node_val.c.branch == node_val_hirev_specific.c.branch,
-            table_node_val.c.rev == node_val_hirev_specific.c.rev
-        )
-    )
-
-    def edges_hirev_select(wheres=None):
-        s = select(
+    def edges_recent_join(wheres=None):
+        hirev = select(
             [
                 table_edges.c.graph,
                 table_edges.c.nodeA,
@@ -368,19 +256,14 @@ def compile_sql(dialect):
             ]
         )
         if wheres:
-            s = s.where(
-                and_(*wheres)
-            )
-        return s.group_by(
+            hirev = hirev.where(and_(*wheres))
+        hirev = hirev.group_by(
             table_edges.c.graph,
             table_edges.c.nodeA,
             table_edges.c.nodeB,
             table_edges.c.idx,
             table_edges.c.branch
         ).alias('hirev')
-
-    def edges_recent_join(wheres=None):
-        hirev = edges_hirev_select(wheres)
         return table_edges.join(
             hirev,
             and_(
@@ -394,7 +277,7 @@ def compile_sql(dialect):
         )
 
     def edge_val_recent_join(wheres=None):
-        s = select(
+        hirev = select(
             [
                 table_edge_val.c.graph,
                 table_edge_val.c.nodeA,
@@ -406,10 +289,10 @@ def compile_sql(dialect):
             ]
         )
         if wheres:
-            s = s.where(
+            hirev = hirev.where(
                 and_(*wheres)
             )
-        hirev = s.group_by(
+        hirev = hirev.group_by(
             table_edge_val.c.graph,
             table_edge_val.c.nodeA,
             table_edge_val.c.nodeB,
@@ -453,25 +336,25 @@ def compile_sql(dialect):
             table_global.c.key == bindparam('key')
         ).compile(dialect=dialect),
         'edge_val_ins': table_edge_val.insert().values(
-            graph=bindparam('g'),
+            graph=bindparam('graph'),
             nodeA=bindparam('orig'),
             nodeB=bindparam('dest'),
-            idx=bindparam('i'),
-            key=bindparam('k'),
-            branch=bindparam('b'),
-            rev=bindparam('r'),
-            value=bindparam('v')
+            idx=bindparam('idx'),
+            key=bindparam('key'),
+            branch=bindparam('branch'),
+            rev=bindparam('rev'),
+            value=bindparam('value')
         ).compile(dialect=dialect),
         'edge_val_upd': table_edge_val.update().values(
-            value=bindparam('v')
+            value=bindparam('value')
         ).where(
             and_(
-                table_edge_val.c.graph == bindparam('g'),
+                table_edge_val.c.graph == bindparam('graph'),
                 table_edge_val.c.nodeA == bindparam('orig'),
                 table_edge_val.c.nodeB == bindparam('dest'),
-                table_edge_val.c.idx == bindparam('i'),
-                table_edge_val.c.branch == bindparam('b'),
-                table_edge_val.c.rev == bindparam('r')
+                table_edge_val.c.idx == bindparam('idx'),
+                table_edge_val.c.branch == bindparam('branch'),
+                table_edge_val.c.rev == bindparam('rev')
             )
         ).compile(dialect=dialect),
         'global_items': select(
@@ -490,7 +373,7 @@ def compile_sql(dialect):
         'graph_type': select(
             [table_graphs.c.type]
         ).where(
-            table_graphs.c.graph == bindparam('g')
+            table_graphs.c.graph == bindparam('graph')
         ).compile(dialect=dialect),
         'new_branch': table_branches.insert().values(
             branch=bindparam('branch'),
@@ -520,44 +403,57 @@ def compile_sql(dialect):
             table_branches.c.branch == bindparam('branch')
         ).compile(dialect=dialect),
         'global_ins': table_global.insert().values(
-            key=bindparam('k'),
-            value=bindparam('v')
+            key=bindparam('key'),
+            value=bindparam('value')
         ).compile(dialect=dialect),
         'global_upd': table_global.update().values(
-            value=bindparam('v')
+            value=bindparam('value')
         ).where(
-            table_global.c.key == bindparam('k')
+            table_global.c.key == bindparam('key')
         ),
         'global_del': table_global.delete().where(
-            table_global.c.key == bindparam('k')
+            table_global.c.key == bindparam('key')
         ).compile(dialect=dialect),
         'nodes_extant': select(
             [table_nodes.c.node]
         ).select_from(
-            rnj_general
+            hirev_nodes_join(
+                [
+                    table_nodes.c.graph == bindparam('graph'),
+                    table_nodes.c.branch == bindparam('branch'),
+                    table_nodes.c.rev <= bindparam('rev')
+                ]
+            )
         ).where(
             table_nodes.c.extant
         ).compile(dialect=dialect),
         'node_exists': select(
             [table_nodes.c.extant]
         ).select_from(
-            rnj_specific
+            hirev_nodes_join(
+                [
+                    table_nodes.c.graph == bindparam('graph'),
+                    table_nodes.c.node == bindparam('node'),
+                    table_nodes.c.branch == bindparam('branch'),
+                    table_nodes.c.rev <= bindparam('rev')
+                ]
+            )
         ).compile(dialect=dialect),
         'exist_node_ins': table_nodes.insert().values(
-            graph=bindparam('g'),
-            node=bindparam('n'),
-            branch=bindparam('b'),
-            rev=bindparam('r'),
-            extant=bindparam('x')
+            graph=bindparam('graph'),
+            node=bindparam('node'),
+            branch=bindparam('branch'),
+            rev=bindparam('rev'),
+            extant=bindparam('extant')
         ).compile(dialect=dialect),
         'exist_node_upd': table_nodes.update().values(
-            extant=bindparam('x')
+            extant=bindparam('extant')
         ).where(
             and_(
-                table_nodes.c.graph == bindparam('g'),
-                table_nodes.c.node == bindparam('n'),
-                table_nodes.c.branch == bindparam('b'),
-                table_nodes.c.rev == bindparam('r')
+                table_nodes.c.graph == bindparam('graph'),
+                table_nodes.c.node == bindparam('node'),
+                table_nodes.c.branch == bindparam('branch'),
+                table_nodes.c.rev == bindparam('rev')
             )
         ).compile(dialect=dialect),
         'graph_val_items': select(
@@ -566,30 +462,43 @@ def compile_sql(dialect):
                 table_graph_val.c.value
             ]
         ).select_from(
-            rgvj_general
+            hirev_graph_val_join(
+                [
+                    table_graph_val.c.graph == bindparam('graph'),
+                    table_graph_val.c.branch == bindparam('branch'),
+                    table_graph_val.c.rev <= bindparam('rev')
+                ]
+            )
         ).compile(dialect=dialect),
         'graph_val_get': select(
             [
                 table_graph_val.c.value
             ]
         ).select_from(
-            rgvj_specific
+            hirev_graph_val_join(
+                [
+                    table_graph_val.c.graph == bindparam('graph'),
+                    table_graph_val.c.key == bindparam('key'),
+                    table_graph_val.c.branch == bindparam('branch'),
+                    table_graph_val.c.rev <= bindparam('rev')
+                ]
+            )
         ).compile(dialect=dialect),
         'graph_val_ins': table_graph_val.insert().values(
-            graph=bindparam('g'),
-            key=bindparam('k'),
-            branch=bindparam('b'),
-            rev=bindparam('r'),
-            value=bindparam('v')
+            graph=bindparam('graph'),
+            key=bindparam('key'),
+            branch=bindparam('branch'),
+            rev=bindparam('rev'),
+            value=bindparam('value')
         ).compile(dialect=dialect),
         'graph_val_upd': table_graph_val.update().values(
-            value=bindparam('v')
+            value=bindparam('value')
         ).where(
             and_(
-                table_graph_val.c.graph == bindparam('g'),
-                table_graph_val.c.key == bindparam('k'),
-                table_graph_val.c.branch == bindparam('b'),
-                table_graph_val.c.rev == bindparam('r')
+                table_graph_val.c.graph == bindparam('graph'),
+                table_graph_val.c.key == bindparam('key'),
+                table_graph_val.c.branch == bindparam('branch'),
+                table_graph_val.c.rev == bindparam('rev')
             )
         ).compile(dialect=dialect),
         'node_val_items': select(
@@ -598,34 +507,49 @@ def compile_sql(dialect):
                 table_node_val.c.value
             ]
         ).select_from(
-            rnvj_general
+            node_val_hirev_join(
+                [
+                    table_node_val.c.graph == bindparam('graph'),
+                    table_node_val.c.node == bindparam('node'),
+                    table_node_val.c.branch == bindparam('branch'),
+                    table_node_val.c.rev <= bindparam('rev')
+                ]
+            )
         ).compile(dialect=dialect),
         'node_val_get': select(
             [
                 table_node_val.c.value
             ]
         ).select_from(
-            rnvj_specific
+            node_val_hirev_join(
+                [
+                    table_node_val.c.graph == bindparam('graph'),
+                    table_node_val.c.node == bindparam('node'),
+                    table_node_val.c.key == bindparam('key'),
+                    table_node_val.c.branch == bindparam('branch'),
+                    table_node_val.c.rev <= bindparam('rev')
+                ]
+            )
         ).where(
             table_node_val.c.value != null()
         ).compile(dialect=dialect),
         'node_val_ins': table_node_val.insert().values(
-            graph=bindparam('g'),
-            node=bindparam('n'),
-            key=bindparam('k'),
-            branch=bindparam('b'),
-            rev=bindparam('r'),
-            value=bindparam('v')
+            graph=bindparam('graph'),
+            node=bindparam('node'),
+            key=bindparam('key'),
+            branch=bindparam('branch'),
+            rev=bindparam('rev'),
+            value=bindparam('value')
         ).compile(dialect=dialect),
         'node_val_upd': table_node_val.update().values(
-            value=bindparam('v')
+            value=bindparam('value')
         ).where(
             and_(
-                table_node_val.c.graph == bindparam('g'),
-                table_node_val.c.node == bindparam('n'),
-                table_node_val.c.key == bindparam('k'),
-                table_node_val.c.branch == bindparam('b'),
-                table_node_val.c.rev == bindparam('r')
+                table_node_val.c.graph == bindparam('graph'),
+                table_node_val.c.node == bindparam('node'),
+                table_node_val.c.key == bindparam('key'),
+                table_node_val.c.branch == bindparam('branch'),
+                table_node_val.c.rev == bindparam('rev')
             )
         ).compile(dialect=dialect),
         'edge_exists': select(
@@ -703,24 +627,24 @@ def compile_sql(dialect):
             )
         ).compile(dialect=dialect),
         'edge_exist_ins': table_edges.insert().values(
-            graph=bindparam('g'),
+            graph=bindparam('graph'),
             nodeA=bindparam('orig'),
             nodeB=bindparam('dest'),
-            idx=bindparam('i'),
-            branch=bindparam('b'),
-            rev=bindparam('r'),
-            extant=bindparam('x')
+            idx=bindparam('idx'),
+            branch=bindparam('branch'),
+            rev=bindparam('rev'),
+            extant=bindparam('extant')
         ).compile(dialect=dialect),
         'edge_exist_upd': table_edges.update().values(
-            extant=bindparam('x')
+            extant=bindparam('extant')
         ).where(
             and_(
-                table_edges.c.graph == bindparam('g'),
+                table_edges.c.graph == bindparam('graph'),
                 table_edges.c.nodeA == bindparam('orig'),
                 table_edges.c.nodeB == bindparam('dest'),
-                table_edges.c.idx == bindparam('i'),
-                table_edges.c.branch == bindparam('b'),
-                table_edges.c.rev == bindparam('r')
+                table_edges.c.idx == bindparam('idx'),
+                table_edges.c.branch == bindparam('branch'),
+                table_edges.c.rev == bindparam('rev')
             )
         ).compile(dialect=dialect),
         'edge_val_items': select(
@@ -834,7 +758,7 @@ class Alchemist(object):
         """Fetch the type of the named graph."""
         return self.conn.execute(
             self.sql['graph_type'],
-            g=graph
+            graph=graph
         )
 
     def new_branch(self, branch, parent, parent_rev):
@@ -904,8 +828,8 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['global_ins'],
-            k=key,
-            v=value
+            key=key,
+            value=value
         )
 
     def global_upd(self, key, value):
@@ -915,24 +839,24 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['global_upd'],
-            k=key,
-            v=value
+            key=key,
+            value=value
         )
 
     def global_del(self, key):
         """Delete the record for global variable ``key``."""
         return self.conn.execute(
             self.sql['global_del'],
-            k=key
+            key=key
         )
 
     def nodes_extant(self, graph, branch, rev):
         """Query for nodes that exist in ``graph`` at ``(branch, rev)``."""
         return self.conn.execute(
             self.sql['nodes_extant'],
-            g=graph,
-            b=branch,
-            r=rev
+            graph=graph,
+            branch=branch,
+            rev=rev
         )
 
     def node_exists(self, graph, node, branch, rev):
@@ -942,10 +866,10 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['node_exists'],
-            g=graph,
-            n=node,
-            b=branch,
-            r=rev
+            graph=graph,
+            node=node,
+            branch=branch,
+            rev=rev
         )
 
     def exist_node_ins(self, graph, node, branch, rev, extant):
@@ -955,11 +879,11 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['exist_node_ins'],
-            g=graph,
-            n=node,
-            b=branch,
-            r=rev,
-            x=extant
+            graph=graph,
+            node=node,
+            branch=branch,
+            rev=rev,
+            extant=extant
         )
 
     def exist_node_upd(self, extant, graph, node, branch, rev):
@@ -970,11 +894,11 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['exist_node_upd'],
-            x=extant,
-            g=graph,
-            n=node,
-            b=branch,
-            r=rev
+            extant=extant,
+            graph=graph,
+            node=node,
+            branch=branch,
+            rev=rev
         )
 
     def graph_val_items(self, graph, branch, rev):
@@ -984,9 +908,9 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['graph_val_items'],
-            g=graph,
-            b=branch,
-            r=rev
+            graph=graph,
+            branch=branch,
+            rev=rev
         )
 
     def graph_val_get(self, graph, key, branch, rev):
@@ -996,10 +920,10 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['graph_val_get'],
-            g=graph,
-            k=key,
-            b=branch,
-            r=rev,
+            graph=graph,
+            key=key,
+            branch=branch,
+            rev=rev,
         )
 
     def graph_val_ins(self, graph, key, branch, rev, value):
@@ -1009,22 +933,22 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['graph_val_ins'],
-            g=graph,
-            k=key,
-            b=branch,
-            r=rev,
-            v=value
+            graph=graph,
+            key=key,
+            branch=branch,
+            rev=rev,
+            value=value
         )
 
     def graph_val_upd(self, value, graph, key, branch, rev):
         """Update the record previously inserted by ``graph_val_ins``"""
         return self.conn.execute(
             self.sql['graph_val_upd'],
-            v=value,
-            g=graph,
-            k=key,
-            b=branch,
-            r=rev
+            value=value,
+            graph=graph,
+            key=key,
+            branch=branch,
+            rev=rev
         )
 
     def node_val_items(self, graph, node, branch, rev):
@@ -1034,10 +958,10 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['node_val_items'],
-            g=graph,
-            n=node,
-            b=branch,
-            r=rev
+            graph=graph,
+            node=node,
+            branch=branch,
+            rev=rev
         )
 
     def node_val_get(self, graph, node, key, branch, rev):
@@ -1047,11 +971,11 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['node_val_get'],
-            g=graph,
-            n=node,
-            k=key,
-            b=branch,
-            r=rev
+            graph=graph,
+            node=node,
+            key=key,
+            branch=branch,
+            rev=rev
         )
 
     def node_val_ins(self, graph, node, key, branch, rev, value):
@@ -1061,24 +985,24 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['node_val_ins'],
-            g=graph,
-            n=node,
-            k=key,
-            b=branch,
-            r=rev,
-            v=value
+            graph=graph,
+            node=node,
+            key=key,
+            branch=branch,
+            rev=rev,
+            value=value
         )
 
     def node_val_upd(self, value, graph, node, key, branch, rev):
         """Update the record previously inserted by ``node_val_ins``"""
         return self.conn.execute(
             self.sql['node_val_upd'],
-            v=value,
-            g=graph,
-            n=node,
-            k=key,
-            b=branch,
-            r=rev
+            value=value,
+            graph=graph,
+            node=node,
+            key=key,
+            branch=branch,
+            rev=rev
         )
 
     def edge_exists(self, graph, nodeA, nodeB, idx, branch, rev):
@@ -1088,12 +1012,12 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['edge_exists'],
-            g=graph,
+            graph=graph,
             orig=nodeA,
             dest=nodeB,
-            i=idx,
-            b=branch,
-            r=rev
+            idx=idx,
+            branch=branch,
+            rev=rev
         )
 
     def edges_extant(self, graph, branch, rev):
@@ -1103,9 +1027,9 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['edges_extant'],
-            g=graph,
-            b=branch,
-            r=rev
+            graph=graph,
+            branch=branch,
+            rev=rev
         )
 
     def nodeAs(self, graph, nodeB, branch, rev):
@@ -1115,10 +1039,10 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['nodeAs'],
-            g=graph,
+            graph=graph,
             dest=nodeB,
-            b=branch,
-            r=rev
+            branch=branch,
+            rev=rev
         )
 
     def nodeBs(self, graph, nodeA, branch, rev):
@@ -1128,10 +1052,10 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['nodeBs'],
-            g=graph,
+            graph=graph,
             orig=nodeA,
-            b=branch,
-            r=rev
+            branch=branch,
+            rev=rev
         )
 
     def multi_edges(self, graph, nodeA, nodeB, branch, rev):
@@ -1142,11 +1066,11 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['multi_edges'],
-            g=graph,
+            graph=graph,
             orig=nodeA,
             dest=nodeB,
-            b=branch,
-            r=rev
+            branch=branch,
+            rev=rev
         )
 
     def edge_exist_ins(self, graph, nodeA, nodeB, idx, branch, rev, extant):
@@ -1159,26 +1083,26 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['edge_exist_ins'],
-            g=graph,
+            graph=graph,
             orig=nodeA,
             dest=nodeB,
-            i=idx,
-            b=branch,
-            r=rev,
-            x=extant
+            idx=idx,
+            branch=branch,
+            rev=rev,
+            extant=extant
         )
 
     def edge_exist_upd(self, extant, graph, nodeA, nodeB, idx, branch, rev):
         """Update a record previously inserted with ``edge_exist_ins``."""
         return self.conn.execute(
             self.sql['edge_exist_upd'],
-            x=extant,
-            g=graph,
+            extant=extant,
+            graph=graph,
             orig=nodeA,
             dest=nodeB,
-            i=idx,
-            b=branch,
-            r=rev
+            idx=idx,
+            branch=branch,
+            rev=rev
         )
 
     def edge_val_items(self, graph, nodeA, nodeB, idx, branch, rev):
@@ -1188,12 +1112,12 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['edge_val_items'],
-            g=graph,
+            graph=graph,
             orig=nodeA,
             dest=nodeB,
-            i=idx,
-            b=branch,
-            r=rev
+            idx=idx,
+            branch=branch,
+            rev=rev
         )
 
     def edge_val_get(self, graph, nodeA, nodeB, idx, key, branch, rev):
@@ -1203,13 +1127,13 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['edge_val_get'],
-            g=graph,
+            graph=graph,
             orig=nodeA,
             dest=nodeB,
-            i=idx,
-            k=key,
-            b=branch,
-            r=rev
+            idx=idx,
+            key=key,
+            branch=branch,
+            rev=rev
         )
 
     def edge_val_ins(self, graph, nodeA, nodeB, idx, key, branch, rev, value):
@@ -1219,27 +1143,27 @@ class Alchemist(object):
         """
         return self.conn.execute(
             self.sql['edge_val_ins'],
-            g=graph,
+            graph=graph,
             orig=nodeA,
             dest=nodeB,
-            i=idx,
-            k=key,
-            b=branch,
-            r=rev,
-            v=value
+            idx=idx,
+            key=key,
+            branch=branch,
+            rev=rev,
+            value=value
         )
 
     def edge_val_upd(self, value, graph, nodeA, nodeB, idx, key, branch, rev):
         """Update a record previously inserted by ``edge_val_ins``"""
         return self.conn.execute(
             self.sql['edge_val_upd'],
-            g=graph,
+            graph=graph,
             orig=nodeA,
             dest=nodeB,
-            i=idx,
-            k=key,
-            b=branch,
-            r=rev
+            idx=idx,
+            key=key,
+            branch=branch,
+            rev=rev
         )
 
 
