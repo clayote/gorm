@@ -7,8 +7,8 @@ doesn't pollute the other files so much.
 """
 from collections import MutableMapping
 from sqlite3 import IntegrityError as sqliteIntegError
-
-from gorm.json import json_dump, json_load
+import gorm
+from gorm.xjson import json_dump, json_load
 
 alchemyIntegError = None
 try:
@@ -85,8 +85,10 @@ class QueryEngine(object):
 
         def lite_init():
             from sqlite3 import connect, Connection
-            import gorm.sql
-            self.strings = gorm.sql
+            from json import loads
+            self.strings = loads(
+                open(gorm.__path__[0] + '/sqlite.json', 'r').read()
+            )
             if isinstance(dbstring, Connection):
                 self.connection = dbstring
             else:
@@ -115,15 +117,9 @@ class QueryEngine(object):
         if hasattr(self, 'alchemist'):
             return getattr(self.alchemist, stringname)(*args, **kwargs)
         else:
-            s = getattr(self.strings, stringname)
-            if callable(s):
-                qrystr = s(*args, **kwargs)
-            elif kwargs:
-                qrystr = s.format(**kwargs)
-            else:
-                qrystr = s
+            s = self.strings[stringname]
             return self.connection.cursor().execute(
-                qrystr, args
+                s.format(**kwargs) if kwargs else s, args
             )
 
     def active_branches(self, branch, rev):

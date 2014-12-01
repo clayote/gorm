@@ -10,7 +10,7 @@ except OSError:
     pass
 conn = connect('test.db')
 lol = nx.lollipop_graph(3,3)
-orm = ORM(conn)
+orm = ORM('sqlite://')
 orm.initdb()
 pop = orm.new_graph('pop', lol)
 assert(lol.edge == pop.edge)

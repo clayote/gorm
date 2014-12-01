@@ -1,7 +1,7 @@
 # This file is part of gorm, an object relational mapper for versioned graphs.
 # Copyright (C) 2014 Zachary Spector.
 from collections import MutableMapping
-import json
+from json import dumps, loads
 
 
 def enc_tuple(o):
@@ -49,7 +49,7 @@ def json_dump(obj):
     """JSON dumper that distinguishes lists from tuples"""
     k = str(obj)
     if k not in json_dump_hints:
-        json_dump_hints[k] = json.dumps(enc_tuple(obj))
+        json_dump_hints[k] = dumps(enc_tuple(obj))
     return json_dump_hints[k]
 
 
@@ -61,7 +61,7 @@ def json_load(s):
     if s is None:
         return None
     if s not in json_load_hints:
-        json_load_hints[s] = dec_tuple(json.loads(s))
+        json_load_hints[s] = dec_tuple(loads(s))
     return json_load_hints[s]
 
 

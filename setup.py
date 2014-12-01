@@ -9,5 +9,13 @@ setup(
     description = "An object-relational mapper serving database-backed versions of the standard networkx graph classes.",
     license = "BSD",
     keywords = "orm graph networkx sql database",
-    url = "https://github.com/LogicalDash/gorm"
+    url = "https://github.com/LogicalDash/gorm",
+    package_dir={
+        "gorm": "gorm"
+    },
+    package_data={
+        "gorm": [
+            "sqlite.json"
+        ]
+    }
 )
