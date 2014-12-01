@@ -209,44 +209,64 @@ def compile_sql(dialect):
     rn_general = recent_nodes(False)
     rn_specific = recent_nodes(True)
 
-    def recent_graph_val_join(key):
-        """Return a query for the most recent graph_val
-        records in some graph.
-
-        """
-        hirev_where = [
+    hirev_graph_val_general = select(
+        [
+            table_graph_val.c.graph,
+            table_graph_val.c.key,
+            table_graph_val.c.branch,
+            func.MAX(table_graph_val.c.rev).label('rev')
+        ]
+    ).where(
+        and_(
             table_graph_val.c.graph == bindparam('g'),
             table_graph_val.c.branch == bindparam('b'),
             table_graph_val.c.rev <= bindparam('r')
-        ]
-        if key:
-            hirev_where.append(table_graph_val.c.key == bindparam('k'))
-        hirev_graph_val = select(
-            [
-                table_graph_val.c.graph,
-                table_graph_val.c.key,
-                table_graph_val.c.branch,
-                func.MAX(table_graph_val.c.rev).label('rev')
-            ]
-        ).where(
-            and_(*hirev_where)
-        ).group_by(
+        )
+    ).group_by(
+        table_graph_val.c.graph,
+        table_graph_val.c.key,
+        table_graph_val.c.branch
+    ).alias('hirev')
+
+    rgvj_general = table_graph_val.join(
+        hirev_graph_val_general,
+        and_(
+            table_graph_val.c.graph == hirev_graph_val_general.c.graph,
+            table_graph_val.c.key == hirev_graph_val_general.c.key,
+            table_graph_val.c.branch == hirev_graph_val_general.c.branch,
+            table_graph_val.c.rev == hirev_graph_val_general.c.rev
+        )
+    )
+
+    hirev_graph_val_specific = select(
+        [
             table_graph_val.c.graph,
             table_graph_val.c.key,
-            table_graph_val.c.branch
-        ).alias()
-        return table_graph_val.join(
-            hirev_graph_val,
-            and_(
-                table_graph_val.c.graph == hirev_graph_val.c.graph,
-                table_graph_val.c.key == hirev_graph_val.c.key,
-                table_graph_val.c.branch == hirev_graph_val.c.branch,
-                table_graph_val.c.rev == hirev_graph_val.c.rev
-            )
+            table_graph_val.c.branch,
+            func.MAX(table_graph_val.c.rev).label('rev')
+        ]
+    ).where(
+        and_(
+            table_graph_val.c.graph == bindparam('g'),
+            table_graph_val.c.key == bindparam('k'),
+            table_graph_val.c.branch == bindparam('b'),
+            table_graph_val.c.rev <= bindparam('r')
         )
+    ).group_by(
+        table_graph_val.c.graph,
+        table_graph_val.c.key,
+        table_graph_val.c.branch
+    ).alias('hirev')
 
-    rgvj_general = recent_graph_val_join(False)
-    rgvj_specific = recent_graph_val_join(True)
+    rgvj_specific = table_graph_val.join(
+        hirev_graph_val_specific,
+        and_(
+            table_graph_val.c.graph == hirev_graph_val_specific.c.graph,
+            table_graph_val.c.key == hirev_graph_val_specific.c.key,
+            table_graph_val.c.branch == hirev_graph_val_specific.c.branch,
+            table_graph_val.c.rev == hirev_graph_val_specific.c.rev
+        )
+    )
 
     def recent_node_val(key):
         """Return a query for getting the most recent value of
@@ -915,7 +935,7 @@ class Alchemist(object):
             g=graph,
             k=key,
             b=branch,
-            r=rev
+            r=rev,
         )
 
     def graph_val_ins(self, graph, key, branch, rev, value):
