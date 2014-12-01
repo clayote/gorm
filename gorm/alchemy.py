@@ -393,22 +393,8 @@ def compile_sql(dialect):
             )
         )
 
-    def edge_val_recent(key):
-        """Make a query for getting the most recent record
-        relevant to edge values of some edge.
-
-        """
-        hirev_where = [
-            table_edge_val.c.graph == bindparam('g'),
-            table_edge_val.c.nodeA == bindparam('orig'),
-            table_edge_val.c.nodeB == bindparam('dest'),
-            table_edge_val.c.idx == bindparam('i'),
-            table_edge_val.c.branch == bindparam('b'),
-            table_edge_val.c.rev <= bindparam('r')
-        ]
-        if key:
-            hirev_where.append(table_edge_val.c.key == bindparam('k'))
-        hirev_edge_val = select(
+    def edge_val_recent_join(wheres=None):
+        s = select(
             [
                 table_edge_val.c.graph,
                 table_edge_val.c.nodeA,
@@ -418,9 +404,12 @@ def compile_sql(dialect):
                 table_edge_val.c.branch,
                 func.MAX(table_edge_val.c.rev).label('rev')
             ]
-        ).where(
-            and_(*hirev_where)
-        ).group_by(
+        )
+        if wheres:
+            s = s.where(
+                and_(*wheres)
+            )
+        hirev = s.group_by(
             table_edge_val.c.graph,
             table_edge_val.c.nodeA,
             table_edge_val.c.nodeB,
@@ -428,33 +417,17 @@ def compile_sql(dialect):
             table_edge_val.c.key,
             table_edge_val.c.branch
         ).alias('hirev')
-        return select(
-            [
-                table_edge_val.c.graph,
-                table_edge_val.c.nodeA,
-                table_edge_val.c.nodeB,
-                table_edge_val.c.idx,
-                table_edge_val.c.key,
-                table_edge_val.c.branch,
-                table_edge_val.c.rev,
-                table_edge_val.c.value
-            ]
-        ).select_from(
-            table_edge_val.join(
-                hirev_edge_val,
-                and_(
-                    table_edge_val.c.graph == hirev_edge_val.c.graph,
-                    table_edge_val.c.nodeA == hirev_edge_val.c.nodeA,
-                    table_edge_val.c.nodeB == hirev_edge_val.c.nodeB,
-                    table_edge_val.c.idx == hirev_edge_val.c.idx,
-                    table_edge_val.c.branch == hirev_edge_val.c.branch,
-                    table_edge_val.c.rev == hirev_edge_val.c.rev
-                )
+        return table_edge_val.join(
+            hirev,
+            and_(
+                table_edge_val.c.graph == hirev.c.graph,
+                table_edge_val.c.nodeA == hirev.c.nodeA,
+                table_edge_val.c.nodeB == hirev.c.nodeB,
+                table_edge_val.c.idx == hirev.c.idx,
+                table_edge_val.c.branch == hirev.c.branch,
+                table_edge_val.c.rev == hirev.c.rev
             )
         )
-
-    evr_general = edge_val_recent(False)
-    evr_specific = edge_val_recent(True)
 
     r = {
         'ctbranch': select(
@@ -692,7 +665,7 @@ def compile_sql(dialect):
             edges_recent_join(
                 [
                     table_edges.c.graph == bindparam('graph'),
-                    table_edges.c.nodeB == bindparam('nodeB'),
+                    table_edges.c.nodeB == bindparam('dest'),
                     table_edges.c.branch == bindparam('branch'),
                     table_edges.c.rev <= bindparam('rev')
                 ]
@@ -707,7 +680,7 @@ def compile_sql(dialect):
             edges_recent_join(
                 [
                     table_edges.c.graph == bindparam('graph'),
-                    table_edges.c.nodeA == bindparam('nodeA'),
+                    table_edges.c.nodeA == bindparam('orig'),
                     table_edges.c.branch == bindparam('branch'),
                     table_edges.c.rev <= bindparam('rev')
                 ]
@@ -722,8 +695,8 @@ def compile_sql(dialect):
             edges_recent_join(
                 [
                     table_edges.c.graph == bindparam('graph'),
-                    table_edges.c.nodeA == bindparam('nodeA'),
-                    table_edges.c.nodeB == bindparam('nodeB'),
+                    table_edges.c.nodeA == bindparam('orig'),
+                    table_edges.c.nodeB == bindparam('dest'),
                     table_edges.c.branch == bindparam('branch'),
                     table_edges.c.rev <= bindparam('rev')
                 ]
@@ -752,16 +725,37 @@ def compile_sql(dialect):
         ).compile(dialect=dialect),
         'edge_val_items': select(
             [
-                evr_general.c.key,
-                evr_general.c.value
+                table_edge_val.c.key,
+                table_edge_val.c.value
             ]
+        ).select_from(
+            edge_val_recent_join(
+                [
+                    table_edge_val.c.graph == bindparam('graph'),
+                    table_edge_val.c.nodeA == bindparam('orig'),
+                    table_edge_val.c.nodeB == bindparam('dest'),
+                    table_edge_val.c.idx == bindparam('idx'),
+                    table_edge_val.c.branch == bindparam('branch'),
+                    table_edge_val.c.rev <= bindparam('rev')
+                ]
+            )
         ).compile(dialect=dialect),
         'edge_val_get': select(
             [
-                evr_specific.c.value
+                table_edge_val.c.value
             ]
-        ).where(
-            evr_specific.c.value != null()
+        ).select_from(
+            edge_val_recent_join(
+                [
+                    table_edge_val.c.graph == bindparam('graph'),
+                    table_edge_val.c.nodeA == bindparam('orig'),
+                    table_edge_val.c.nodeB == bindparam('dest'),
+                    table_edge_val.c.idx == bindparam('idx'),
+                    table_edge_val.c.key == bindparam('key'),
+                    table_edge_val.c.branch == bindparam('branch'),
+                    table_edge_val.c.rev <= bindparam('rev')
+                ]
+            )
         ).compile(dialect=dialect)
     }
 
