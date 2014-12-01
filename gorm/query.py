@@ -574,11 +574,7 @@ class QueryEngine(object):
         try:
             cursor.execute('SELECT * FROM global;')
         except OperationalError:
-            cursor.execute(
-                "CREATE TABLE global ("
-                "key TEXT NOT NULL PRIMARY KEY, "
-                "value TEXT)"
-                ";")
+            cursor.execute(self.strings['create_global'])
         if 'branch' not in self.globl:
             self.globl['branch'] = 'master'
         if 'rev' not in self.globl:
@@ -586,133 +582,41 @@ class QueryEngine(object):
         try:
             cursor.execute('SELECT * FROM branches;')
         except OperationalError:
+            cursor.execute(self.strings['create_branches'])
             cursor.execute(
-                "CREATE TABLE branches ("
-                "branch TEXT NOT NULL DEFAULT 'master', "
-                "parent TEXT NOT NULL DEFAULT 'master', "
-                "parent_rev INTEGER NOT NULL DEFAULT 0, "
-                "PRIMARY KEY(branch), "
-                "FOREIGN KEY(parent) REFERENCES branches(branch)"
-                ");"
-            )
-            cursor.execute(
-                "INSERT INTO branches DEFAULT VALUES;"
+                "INSERT INTO branches (branch, parent, parent_rev) "
+                "VALUES ('master', 'master', 0)"
             )
         try:
             cursor.execute('SELECT * FROM graphs;')
         except OperationalError:
-            cursor.execute(
-                "CREATE TABLE graphs ("
-                "graph TEXT NOT NULL, "
-                "type TEXT NOT NULL DEFAULT 'Graph', "
-                "PRIMARY KEY(graph), "
-                "CHECK(type IN "
-                "('Graph', 'DiGraph', 'MultiGraph', 'MultiDiGraph'))"
-                ");"
-            )
+            cursor.execute(self.strings['create_graphs'])
         try:
             cursor.execute('SELECT * FROM graph_val;')
         except OperationalError:
-            cursor.execute(
-                "CREATE TABLE graph_val ("
-                "graph TEXT NOT NULL, "
-                "key TEXT NOT NULL, "
-                "branch TEXT NOT NULL DEFAULT 'master', "
-                "rev INTEGER NOT NULL DEFAULT 0, "
-                "value TEXT, "
-                "PRIMARY KEY (graph, key, branch, rev), "
-                "FOREIGN KEY(graph) REFERENCES graphs(graph), "
-                "FOREIGN KEY(branch) REFERENCES branches(branch))"
-                ";"
-            )
-            cursor.execute(
-                "CREATE INDEX graph_val_idx ON graph_val(graph, key)"
-                ";"
-            )
+            cursor.execute(self.strings['create_graph_val'])
+            cursor.execute(self.strings['index_graph_val'])
         try:
             cursor.execute('SELECT * FROM nodes;')
         except OperationalError:
-            cursor.execute(
-                "CREATE TABLE nodes ("
-                "graph TEXT NOT NULL, "
-                "node TEXT NOT NULL, "
-                "branch TEXT NOT NULL DEFAULT 'master', "
-                "rev INTEGER NOT NULL DEFAULT 0, "
-                "extant BOOLEAN NOT NULL, "
-                "PRIMARY KEY (graph, node, branch, rev), "
-                "FOREIGN KEY(graph) REFERENCES graphs(graph), "
-                "FOREIGN KEY(branch) REFERENCES branches(branch))"
-                ";"
-            )
-            cursor.execute(
-                "CREATE INDEX nodes_idx ON nodes(graph, node)"
-                ";"
-            )
+            cursor.execute(self.strings['create_nodes'])
+            cursor.execute(self.strings['index_nodes'])
+
         try:
             cursor.execute('SELECT * FROM node_val;')
         except OperationalError:
-            cursor.execute(
-                "CREATE TABLE node_val ("
-                "graph TEXT NOT NULL, "
-                "node TEXT NOT NULL, "
-                "key TEXT NOT NULL, "
-                "branch TEXT NOT NULL DEFAULT 'master', "
-                "rev INTEGER NOT NULL DEFAULT 0, "
-                "value TEXT, "
-                "PRIMARY KEY(graph, node, key, branch, rev), "
-                "FOREIGN KEY(graph, node) REFERENCES nodes(graph, node), "
-                "FOREIGN KEY(branch) REFERENCES branches(branch))"
-                ";"
-            )
-            cursor.execute(
-                "CREATE INDEX node_val_idx ON node_val(graph, node, key);"
-            )
+            cursor.execute(self.strings['create_node_val'])
+            cursor.execute(self.strings['index_node_val'])
         try:
             cursor.execute('SELECT * FROM edges;')
         except OperationalError:
-            cursor.execute(
-                "CREATE TABLE edges ("
-                "graph TEXT NOT NULL, "
-                "nodeA TEXT NOT NULL, "
-                "nodeB TEXT NOT NULL, "
-                "idx INTEGER NOT NULL DEFAULT 0, "
-                "branch TEXT NOT NULL DEFAULT 'master', "
-                "rev INTEGER NOT NULL DEFAULT 0, "
-                "extant BOOLEAN NOT NULL, "
-                "PRIMARY KEY (graph, nodeA, nodeB, idx, branch, rev), "
-                "FOREIGN KEY(graph, nodeA) REFERENCES nodes(graph, node), "
-                "FOREIGN KEY(graph, nodeB) REFERENCES nodes(graph, node), "
-                "FOREIGN KEY(branch) REFERENCES branches(branch))"
-                ";"
-            )
-            cursor.execute(
-                "CREATE INDEX edges_idx ON edges(graph, nodeA, nodeB, idx)"
-                ";"
-            )
+            cursor.execute(self.strings['create_edges'])
+            cursor.execute(self.strings['index_edges'])
         try:
             cursor.execute('SELECT * FROM edge_val;')
         except OperationalError:
-            cursor.execute(
-                "CREATE TABLE edge_val ("
-                "graph TEXT NOT NULL, "
-                "nodeA TEXT NOT NULL, "
-                "nodeB TEXT NOT NULL, "
-                "idx INTEGER NOT NULL DEFAULT 0, "
-                "key TEXT, "
-                "branch TEXT NOT NULL DEFAULT 'master', "
-                "rev INTEGER NOT NULL DEFAULT 0, "
-                "value TEXT, "
-                "PRIMARY KEY(graph, nodeA, nodeB, idx, key, branch, rev), "
-                "FOREIGN KEY(graph, nodeA, nodeB, idx) "
-                "REFERENCES edges(graph, nodeA, nodeB, idx), "
-                "FOREIGN KEY(branch) REFERENCES branches(branch))"
-                ";"
-            )
-            cursor.execute(
-                "CREATE INDEX edge_val_idx ON "
-                "edge_val(graph, nodeA, nodeB, idx, key)"
-                ";"
-            )
+            cursor.execute(self.strings['create_edge_val'])
+            cursor.execute(self.strings['index_edge_val'])
 
     def commit(self):
         """Commit the transaction"""

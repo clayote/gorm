@@ -17,6 +17,7 @@ from sqlalchemy import (
     null
 )
 from sqlalchemy.sql import bindparam
+from sqlalchemy.sql.ddl import CreateTable, CreateIndex
 from sqlalchemy import create_engine
 from json import dumps
 
@@ -160,54 +161,74 @@ table = {
     'edge_val': table_edge_val
 }
 
+index = {
+    'graph_val': index_graph_val,
+    'nodes': index_nodes,
+    'node_val': index_node_val,
+    'edges': index_edges,
+    'edge_val': index_edge_val
+}
+
 
 def compile_sql(dialect):
-    def recent_nodes(node):
-        hirev_where = [
+    hirev_nodes_general = select(
+        [
+            table_nodes.c.graph,
+            table_nodes.c.node,
+            table_nodes.c.branch,
+            func.MAX(table_nodes.c.rev).label('rev')
+        ]
+    ).where(
+        and_(
             table_nodes.c.graph == bindparam('g'),
             table_nodes.c.branch == bindparam('b'),
             table_nodes.c.rev <= bindparam('r')
-        ]
-        if node:
-            hirev_where.append(table_nodes.c.node == bindparam('n'))
-        nodes_hirev = select(
-            [
-                table_nodes.c.graph,
-                table_nodes.c.node,
-                table_nodes.c.branch,
-                func.MAX(table_nodes.c.rev).label('rev')
-            ]
-        ).where(
-            and_(
-                *hirev_where
-            )
-        ).group_by(
+        )
+    ).group_by(
+        table_nodes.c.graph,
+        table_nodes.c.node,
+        table_nodes.c.branch
+    ).alias('hirev')
+
+    rnj_general = table_nodes.join(
+        hirev_nodes_general,
+        and_(
+            table_nodes.c.graph == hirev_nodes_general.c.graph,
+            table_nodes.c.node == hirev_nodes_general.c.node,
+            table_nodes.c.branch == hirev_nodes_general.c.branch,
+            table_nodes.c.rev == hirev_nodes_general.c.rev
+        )
+    )
+
+    hirev_nodes_specific = select(
+        [
             table_nodes.c.graph,
             table_nodes.c.node,
-            table_nodes.c.branch
-        ).alias('hirev')
-        return select(
-            [
-                table_nodes.c.graph,
-                table_nodes.c.node,
-                table_nodes.c.branch,
-                table_nodes.c.rev,
-                table_nodes.c.extant
-            ]
-        ).select_from(
-            table_nodes.join(
-                nodes_hirev,
-                and_(
-                    table_nodes.c.graph == nodes_hirev.c.graph,
-                    table_nodes.c.node == nodes_hirev.c.node,
-                    table_nodes.c.branch == nodes_hirev.c.branch,
-                    table_nodes.c.rev == nodes_hirev.c.rev
-                )
-            )
+            table_nodes.c.branch,
+            func.MAX(table_nodes.c.rev).label('rev')
+        ]
+    ).where(
+        and_(
+            table_nodes.c.graph == bindparam('g'),
+            table_nodes.c.node == bindparam('n'),
+            table_nodes.c.branch == bindparam('b'),
+            table_nodes.c.rev <= bindparam('r')
         )
+    ).group_by(
+        table_nodes.c.graph,
+        table_nodes.c.node,
+        table_nodes.c.branch
+    ).alias('hirev')
 
-    rn_general = recent_nodes(False)
-    rn_specific = recent_nodes(True)
+    rnj_specific = table_nodes.join(
+        hirev_nodes_specific,
+        and_(
+            table_nodes.c.graph == hirev_nodes_specific.c.graph,
+            table_nodes.c.node == hirev_nodes_specific.c.node,
+            table_nodes.c.branch == hirev_nodes_specific.c.branch,
+            table_nodes.c.rev == hirev_nodes_specific.c.rev
+        )
+    )
 
     hirev_graph_val_general = select(
         [
@@ -268,77 +289,75 @@ def compile_sql(dialect):
         )
     )
 
-    def recent_node_val(key):
-        """Return a query for getting the most recent value of
-        keys on a node.
-
-        """
-        hirev_where = [
+    node_val_hirev_general = select(
+        [
+            table_node_val.c.graph,
+            table_node_val.c.node,
+            table_node_val.c.branch,
+            table_node_val.c.key,
+            func.MAX(table_node_val.c.rev).label('rev')
+        ]
+    ).where(
+        and_(
             table_node_val.c.graph == bindparam('g'),
             table_node_val.c.node == bindparam('n'),
             table_node_val.c.branch == bindparam('b'),
             table_node_val.c.rev <= bindparam('r')
-        ]
-        if key:
-            hirev_where.append(table_node_val.c.key == bindparam('k'))
-        node_val_hirev = select(
-            [
-                table_node_val.c.graph,
-                table_node_val.c.node,
-                table_node_val.c.branch,
-                table_node_val.c.key,
-                func.MAX(table_node_val.c.rev).label('rev')
-            ]
-        ).where(
-            and_(*hirev_where)
-        ).group_by(
+        )
+    ).group_by(
+        table_node_val.c.graph,
+        table_node_val.c.node,
+        table_node_val.c.branch,
+        table_node_val.c.key
+    ).alias('hirev')
+
+    rnvj_general = table_node_val.join(
+        node_val_hirev_general,
+        and_(
+            table_node_val.c.graph == node_val_hirev_general.c.graph,
+            table_node_val.c.node == node_val_hirev_general.c.node,
+            table_node_val.c.key == node_val_hirev_general.c.key,
+            table_node_val.c.branch == node_val_hirev_general.c.branch,
+            table_node_val.c.rev == node_val_hirev_general.c.rev
+        )
+    )
+
+    node_val_hirev_specific = select(
+        [
             table_node_val.c.graph,
             table_node_val.c.node,
             table_node_val.c.branch,
-            table_node_val.c.key
-        ).alias('hirev')
-        return select(
-            [
-                table_node_val.c.graph,
-                table_node_val.c.node,
-                table_node_val.c.key,
-                table_node_val.c.branch,
-                table_node_val.c.rev,
-                table_node_val.c.value
-            ]
-        ).select_from(
-            table_node_val.join(
-                node_val_hirev,
-                and_(
-                    table_node_val.c.graph == node_val_hirev.c.graph,
-                    table_node_val.c.node == node_val_hirev.c.node,
-                    table_node_val.c.key == node_val_hirev.c.key,
-                    table_node_val.c.branch == node_val_hirev.c.branch,
-                    table_node_val.c.rev == node_val_hirev.c.rev
-                )
-            )
-        )
-
-    rnv_general = recent_node_val(False)
-    rnv_specific = recent_node_val(True)
-
-    def edges_recent(orig=False, dest=False, idx=False):
-        """Return a query to get the most recent edge
-        existence data for some graph.
-
-        """
-        hirev_where = [
-            table_edges.c.graph == bindparam('g'),
-            table_edges.c.branch == bindparam('b'),
-            table_edges.c.rev <= bindparam('r')
+            table_node_val.c.key,
+            func.MAX(table_node_val.c.rev).label('rev')
         ]
-        if orig:
-            hirev_where.append(table_edges.c.nodeA == bindparam('orig'))
-        if dest:
-            hirev_where.append(table_edges.c.nodeB == bindparam('dest'))
-        if idx:
-            hirev_where.append(table_edges.c.idx == bindparam('i'))
-        edges_hirev = select(
+    ).where(
+        and_(
+            table_node_val.c.graph == bindparam('g'),
+            table_node_val.c.node == bindparam('n'),
+            table_node_val.c.key == bindparam('k'),
+            table_node_val.c.branch == bindparam('b'),
+            table_node_val.c.rev <= bindparam('r')
+        )
+    ).group_by(
+        table_node_val.c.graph,
+        table_node_val.c.node,
+        table_node_val.c.branch,
+        table_node_val.c.key
+    ).alias('hirev')
+
+    rnvj_specific = table_node_val.join(
+        node_val_hirev_specific,
+        and_(
+            table_node_val.c.graph == node_val_hirev_specific.c.graph,
+            table_node_val.c.node == node_val_hirev_specific.c.node,
+            table_node_val.c.key == node_val_hirev_specific.c.key,
+            table_node_val.c.branch == node_val_hirev_specific.c.branch,
+            table_node_val.c.rev == node_val_hirev_specific.c.rev
+        )
+    )
+
+    def edges_hirev_select(wheres=None):
+        s = select(
             [
                 table_edges.c.graph,
                 table_edges.c.nodeA,
@@ -347,43 +366,32 @@ def compile_sql(dialect):
                 table_edges.c.branch,
                 func.MAX(table_edges.c.rev).label('rev')
             ]
-        ).where(
-            and_(*hirev_where)
-        ).group_by(
+        )
+        if wheres:
+            s = s.where(
+                and_(*wheres)
+            )
+        return s.group_by(
             table_edges.c.graph,
             table_edges.c.nodeA,
             table_edges.c.nodeB,
             table_edges.c.idx,
             table_edges.c.branch
         ).alias('hirev')
-        return select(
-            [
-                table_edges.c.graph,
-                table_edges.c.nodeA,
-                table_edges.c.nodeB,
-                table_edges.c.idx,
-                table_edges.c.branch,
-                table_edges.c.rev,
-                table_edges.c.extant
-            ]
-        ).select_from(
-            table_edges.join(
-                edges_hirev,
-                and_(
-                    table_edges.c.graph == edges_hirev.c.graph,
-                    table_edges.c.nodeA == edges_hirev.c.nodeA,
-                    table_edges.c.nodeB == edges_hirev.c.nodeB,
-                    table_edges.c.idx == edges_hirev.c.idx,
-                    table_edges.c.branch == edges_hirev.c.branch,
-                    table_edges.c.rev == edges_hirev.c.rev
-                )
+
+    def edges_recent_join(wheres=None):
+        hirev = edges_hirev_select(wheres)
+        return table_edges.join(
+            hirev,
+            and_(
+                table_edges.c.graph == hirev.c.graph,
+                table_edges.c.nodeA == hirev.c.nodeA,
+                table_edges.c.nodeB == hirev.c.nodeB,
+                table_edges.c.idx == hirev.c.idx,
+                table_edges.c.branch == hirev.c.branch,
+                table_edges.c.rev == hirev.c.rev
             )
         )
-
-    edges_recent_default = edges_recent()
-    edges_recent_dest = edges_recent(dest=True)
-    edges_recent_orig = edges_recent(orig=True)
-    edges_recent_multi = edges_recent(orig=True, dest=True)
 
     def edge_val_recent(key):
         """Make a query for getting the most recent record
@@ -448,7 +456,7 @@ def compile_sql(dialect):
     evr_general = edge_val_recent(False)
     evr_specific = edge_val_recent(True)
 
-    return {
+    r = {
         'ctbranch': select(
             [func.COUNT(table_branches.c.branch)]
         ).where(
@@ -551,12 +559,16 @@ def compile_sql(dialect):
             table_global.c.key == bindparam('k')
         ).compile(dialect=dialect),
         'nodes_extant': select(
-            [rn_general.c.node]
+            [table_nodes.c.node]
+        ).select_from(
+            rnj_general
         ).where(
-            rn_general.c.extant
+            table_nodes.c.extant
         ).compile(dialect=dialect),
         'node_exists': select(
-            [rn_specific.c.extant]
+            [table_nodes.c.extant]
+        ).select_from(
+            rnj_specific
         ).compile(dialect=dialect),
         'exist_node_ins': table_nodes.insert().values(
             graph=bindparam('g'),
@@ -609,16 +621,20 @@ def compile_sql(dialect):
         ).compile(dialect=dialect),
         'node_val_items': select(
             [
-                rnv_general.c.key,
-                rnv_general.c.value
+                table_node_val.c.key,
+                table_node_val.c.value
             ]
+        ).select_from(
+            rnvj_general
         ).compile(dialect=dialect),
         'node_val_get': select(
             [
-                rnv_specific.c.value
+                table_node_val.c.value
             ]
+        ).select_from(
+            rnvj_specific
         ).where(
-            rnv_specific.c.value != null()
+            table_node_val.c.value != null()
         ).compile(dialect=dialect),
         'node_val_ins': table_node_val.insert().values(
             graph=bindparam('g'),
@@ -640,31 +656,78 @@ def compile_sql(dialect):
             )
         ).compile(dialect=dialect),
         'edge_exists': select(
-            [edges_recent(orig=True, dest=True, idx=True).c.extant]
+            [table_edges.c.extant]
+        ).select_from(
+            edges_recent_join(
+                [
+                    table_edges.c.graph == bindparam('graph'),
+                    table_edges.c.nodeA == bindparam('nodeA'),
+                    table_edges.c.nodeB == bindparam('nodeB'),
+                    table_edges.c.idx == bindparam('idx'),
+                    table_edges.c.branch == bindparam('branch'),
+                    table_edges.c.rev <= bindparam('rev')
+                ]
+            )
         ).compile(dialect=dialect),
         'edges_extant': select(
             [
-                edges_recent_default.c.nodeA,
-                edges_recent_default.c.extant
+                table_edges.c.nodeA,
+                table_edges.c.extant
             ]
+        ).select_from(
+            edges_recent_join(
+                [
+                    table_edges.c.graph == bindparam('graph'),
+                    table_edges.c.branch == bindparam('branch'),
+                    table_edges.c.rev <= bindparam('rev')
+                ]
+            )
         ).compile(dialect=dialect),
         'nodeAs': select(
             [
-                edges_recent_dest.c.nodeA,
-                edges_recent_dest.c.extant
+                table_edges.c.nodeA,
+                table_edges.c.extant
             ]
+        ).select_from(
+            edges_recent_join(
+                [
+                    table_edges.c.graph == bindparam('graph'),
+                    table_edges.c.nodeB == bindparam('nodeB'),
+                    table_edges.c.branch == bindparam('branch'),
+                    table_edges.c.rev <= bindparam('rev')
+                ]
+            )
         ).compile(dialect=dialect),
         'nodeBs': select(
             [
-                edges_recent_orig.c.nodeB,
-                edges_recent_orig.c.extant
+                table_edges.c.nodeB,
+                table_edges.c.extant
             ]
+        ).select_from(
+            edges_recent_join(
+                [
+                    table_edges.c.graph == bindparam('graph'),
+                    table_edges.c.nodeA == bindparam('nodeA'),
+                    table_edges.c.branch == bindparam('branch'),
+                    table_edges.c.rev <= bindparam('rev')
+                ]
+            )
         ).compile(dialect=dialect),
         'multi_edges': select(
             [
-                edges_recent_multi.c.idx,
-                edges_recent_multi.c.extant
+                table_edges.c.idx,
+                table_edges.c.extant
             ]
+        ).select_from(
+            edges_recent_join(
+                [
+                    table_edges.c.graph == bindparam('graph'),
+                    table_edges.c.nodeA == bindparam('nodeA'),
+                    table_edges.c.nodeB == bindparam('nodeB'),
+                    table_edges.c.branch == bindparam('branch'),
+                    table_edges.c.rev <= bindparam('rev')
+                ]
+            )
         ).compile(dialect=dialect),
         'edge_exist_ins': table_edges.insert().values(
             graph=bindparam('g'),
@@ -701,6 +764,13 @@ def compile_sql(dialect):
             evr_specific.c.value != null()
         ).compile(dialect=dialect)
     }
+
+    for t in table.values():
+        r['create_' + t.name] = CreateTable(t).compile(dialect=dialect)
+    for (tab, idx) in index.items():
+        r['index_' + tab] = CreateIndex(idx).compile(dialect=dialect)
+
+    return r
 
 
 class Alchemist(object):
@@ -1180,12 +1250,10 @@ class Alchemist(object):
 
 
 if __name__ == '__main__':
-    e = create_engine('sqlite://')
-    print(
-        dumps(
-            dict(
-                (k, str(v)) for (k, v) in
-                compile_sql(e.dialect).items()
-            )
-        )
+    e = create_engine('sqlite:///:memory:')
+    out = dict(
+        (k, str(v)) for (k, v) in
+        compile_sql(e.dialect).items()
     )
+
+    print(dumps(out))
