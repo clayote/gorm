@@ -209,7 +209,7 @@ def compile_sql(dialect):
     rn_general = recent_nodes(False)
     rn_specific = recent_nodes(True)
 
-    def recent_graph_val(key):
+    def recent_graph_val_join(key):
         """Return a query for the most recent graph_val
         records in some graph.
 
@@ -235,28 +235,18 @@ def compile_sql(dialect):
             table_graph_val.c.key,
             table_graph_val.c.branch
         ).alias()
-        return select(
-            [
-                table_graph_val.c.graph,
-                table_graph_val.c.key,
-                table_graph_val.c.branch,
-                table_graph_val.c.rev,
-                table_graph_val.c.value
-            ]
-        ).select_from(
-            table_graph_val.join(
-                hirev_graph_val,
-                and_(
-                    table_graph_val.c.graph == hirev_graph_val.c.graph,
-                    table_graph_val.c.key == hirev_graph_val.c.key,
-                    table_graph_val.c.branch == hirev_graph_val.c.branch,
-                    table_graph_val.c.rev == hirev_graph_val.c.rev
-                )
+        return table_graph_val.join(
+            hirev_graph_val,
+            and_(
+                table_graph_val.c.graph == hirev_graph_val.c.graph,
+                table_graph_val.c.key == hirev_graph_val.c.key,
+                table_graph_val.c.branch == hirev_graph_val.c.branch,
+                table_graph_val.c.rev == hirev_graph_val.c.rev
             )
         )
 
-    rgv_general = recent_graph_val(False)
-    rgv_specific = recent_graph_val(True)
+    rgvj_general = recent_graph_val_join(False)
+    rgvj_specific = recent_graph_val_join(True)
 
     def recent_node_val(key):
         """Return a query for getting the most recent value of
@@ -567,12 +557,18 @@ def compile_sql(dialect):
         ).compile(dialect=dialect),
         'graph_val_items': select(
             [
-                rgv_general.c.key,
-                rgv_general.c.value
+                table_graph_val.c.key,
+                table_graph_val.c.value
             ]
+        ).select_from(
+            rgvj_general
         ).compile(dialect=dialect),
         'graph_val_get': select(
-            [rgv_specific.c.value]
+            [
+                table_graph_val.c.value
+            ]
+        ).select_from(
+            rgvj_specific
         ).compile(dialect=dialect),
         'graph_val_ins': table_graph_val.insert().values(
             graph=bindparam('g'),
@@ -946,7 +942,6 @@ class Alchemist(object):
             b=branch,
             r=rev
         )
-
 
     def node_val_items(self, graph, node, branch, rev):
         """Get all the most recent values of all the keys on ``node`` in
