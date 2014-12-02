@@ -444,7 +444,7 @@ class AbstractSuccessors(GraphEdgeMapping):
 
     def __getitem__(self, nodeB):
         """Get the edge between my nodeA and the given node"""
-        return Edge(self.graph, *self._order_nodes(nodeB))
+        return Edge(self.graph, self.nodeA, nodeB)
 
     def __setitem__(self, nodeB, value):
         """Set the edge between my nodeA and the given nodeB to the given
