@@ -76,7 +76,7 @@ class GraphMapping(MutableMapping):
                     return r
             except KeyError:
                 continue
-        raise KeyError("key is not set, ever")
+        raise KeyError("key {} is not set, ever".format(key))
 
     def __setitem__(self, key, value):
         """Set key=value at the present branch and revision"""
@@ -316,7 +316,7 @@ class GraphNodeMapping(GraphMapping):
         """If the node exists at present, return it, else throw KeyError"""
         if node not in self:
             raise KeyError("Node doesn't exist")
-        return Node(self.graph.node)
+        return Node(self.graph, node)
 
     def __setitem__(self, node, dikt):
         """Only accept dict-like values for assignment. These are taken to be
@@ -451,10 +451,9 @@ class AbstractSuccessors(GraphEdgeMapping):
         value, a mapping.
 
         """
-        (nodeA, nodeB) = self._order_nodes(nodeB)
         self.gorm.db.exist_edge(
             self.graph.name,
-            nodeA,
+            self.nodeA,
             nodeB,
             0,
             self.gorm.branch,

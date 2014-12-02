@@ -350,7 +350,7 @@ class QueryEngine(object):
                 if row[0] is None:
                     raise KeyError("Key not set")
                 return json_load(row[0])
-        raise KeyError("Key never set")
+        raise KeyError("Key {} never set".format(key))
 
     def node_val_set(self, graph, node, key, branch, rev, value):
         """Set the value of a key on a node at a particular revision."""
