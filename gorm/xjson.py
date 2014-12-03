@@ -96,9 +96,6 @@ class JSONWrapper(MutableMapping):
     def _set(self, v):
         self.outer[self.outkey] = v
 
-    def __getattr__(self, attr):
-        return getattr(self._get(), attr)
-
     def __iter__(self):
         return iter(self._get())
 
@@ -107,7 +104,9 @@ class JSONWrapper(MutableMapping):
 
     def __getitem__(self, k):
         r = self._get()[k]
-        if ismutable(r):
+        if isinstance(r, list):
+            return JSONListWrapper(self, k)
+        elif ismutable(r):
             return JSONWrapper(self, k)
         else:
             return r
@@ -139,3 +138,15 @@ class JSONWrapper(MutableMapping):
 
     def copy(self):
         return self._get().copy()
+
+
+class JSONListWrapper(JSONWrapper):
+    def append(self, v):
+        me = self._get()
+        me.append(v)
+        self._set(me)
+
+    def insert(self, i, v):
+        me = self._get()
+        me.insert(i, v)
+        self._set(me)

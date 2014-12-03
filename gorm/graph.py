@@ -3,7 +3,7 @@
 import networkx
 from networkx.exception import NetworkXError
 from collections import MutableMapping
-from gorm.xjson import ismutable, JSONWrapper
+from gorm.xjson import ismutable, JSONWrapper, JSONListWrapper
 
 
 class GraphMapping(MutableMapping):
@@ -70,7 +70,9 @@ class GraphMapping(MutableMapping):
                     branch,
                     rev
                 )
-                if ismutable(r):
+                if isinstance(r, list):
+                    return JSONListWrapper(self, key)
+                elif ismutable(r):
                     return JSONWrapper(self, key)
                 else:
                     return r
@@ -157,7 +159,9 @@ class Node(GraphMapping):
     def __getitem__(self, key):
         """Get the value of the key at the present branch and rev"""
         r = self._get(key)
-        if ismutable(r):
+        if isinstance(r, list):
+            return JSONListWrapper(self, key)
+        elif ismutable(r):
             return JSONWrapper(self, key)
         else:
             return r
@@ -237,7 +241,9 @@ class Edge(GraphMapping):
 
         """
         r = self._get(key)
-        if ismutable(r):
+        if isinstance(r, list):
+            return JSONListWrapper(self, key)
+        elif ismutable(r):
             return JSONWrapper(self, key)
         else:
             return r
