@@ -59,6 +59,8 @@ class QueryEngine(object):
     Alchemist. Provides functions to run queries using either.
 
     """
+    json_path = gorm.__path__[0]
+
     def __init__(self, dbstring, connect_args, alchemy):
         """If ``alchemy`` is True and ``dbstring`` is a legit database URI,
         instantiate an Alchemist and start a transaction with
@@ -87,7 +89,7 @@ class QueryEngine(object):
             from sqlite3 import connect, Connection
             from json import loads
             self.strings = loads(
-                open(gorm.__path__[0] + '/sqlite.json', 'r').read()
+                open(self.json_path + '/sqlite.json', 'r').read()
             )
             if isinstance(dbstring, Connection):
                 self.connection = dbstring
