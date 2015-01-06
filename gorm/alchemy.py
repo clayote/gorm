@@ -1184,7 +1184,7 @@ if __name__ == '__main__':
     e = create_engine('sqlite:///:memory:')
     out = dict(
         (k, str(v)) for (k, v) in
-        compile_sql(e.dialect).items()
+        compile_sql(e.dialect, MetaData()).items()
     )
 
     print(dumps(out))
