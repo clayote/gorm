@@ -7,10 +7,16 @@ doesn't pollute the other files so much.
 """
 from collections import MutableMapping
 from sqlite3 import IntegrityError as sqliteIntegError
-import xjson
+try:
+    # python 2
+    import xjson
+except ImportError:
+    # python 3
+    from gorm import xjson
 json_dump = xjson.json_dump
 json_load = xjson.json_load
 import os
+xjpath = os.path.dirname(xjson.__file__)
 
 alchemyIntegError = None
 try:
@@ -61,7 +67,7 @@ class QueryEngine(object):
     Alchemist. Provides functions to run queries using either.
 
     """
-    json_path = os.path.dirname(xjson.__file__)
+    json_path = xjpath
 
     def __init__(self, dbstring, connect_args, alchemy):
         """If ``alchemy`` is True and ``dbstring`` is a legit database URI,
