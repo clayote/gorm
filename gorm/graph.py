@@ -472,10 +472,9 @@ class AbstractSuccessors(GraphEdgeMapping):
 
     def __delitem__(self, nodeB):
         """Remove the edge between my nodeA and the given nodeB"""
-        (nodeA, nodeB) = self._order_nodes(nodeB)
         self.gorm.db.exist_edge(
             self.graph.name,
-            nodeA,
+            self.nodeA,
             nodeB,
             0,
             self.gorm.branch,
