@@ -71,7 +71,7 @@ class QueryEngine(object):
         my own transaction though.
 
         """
-        def alchem_init():
+        def alchem_init(dbstring, connect_args):
             from sqlalchemy import create_engine
             from sqlalchemy.engine.base import Engine
             from gorm.alchemy import Alchemist
@@ -85,7 +85,7 @@ class QueryEngine(object):
             self.alchemist = Alchemist(self.engine)
             self.transaction = self.alchemist.conn.begin()
 
-        def lite_init():
+        def lite_init(dbstring, connect_args):
             from sqlite3 import connect, Connection
             from json import loads
             self.strings = loads(
@@ -94,15 +94,18 @@ class QueryEngine(object):
             if isinstance(dbstring, Connection):
                 self.connection = dbstring
             else:
-                self.connection = connect(dbstring.lstrip('sqlite:///'))
+                if dbstring.startswith('sqlite:'):
+                    slashidx = dbstring.rindex('/')
+                    dbstring = dbstring[slashidx+1:]
+                self.connection = connect(dbstring)
 
         if alchemy:
             try:
-                alchem_init()
+                alchem_init(dbstring, connect_args)
             except ImportError:
-                lite_init()
+                lite_init(dbstring, connect_args)
         else:
-            lite_init()
+            lite_init(dbstring, connect_args)
 
         self.globl = GlobalKeyValueStore(self)
         self._branches = {}
@@ -336,6 +339,14 @@ class QueryEngine(object):
                 if k not in seen and v is not None:
                     yield json_load(k)
                 seen.add(k)
+
+    def node_vals_ever(self, graph, node):
+        """Iterate over all values set on a node through time."""
+        (graph, node) = map(json_dump, (graph, node))
+        for (key, branch, tick, value) in self.sql(
+                'node_vals_ever', graph, node
+        ):
+            yield (json_load(key), branch, tick, json_load(value))
 
     def node_val_get(self, graph, node, key, branch, rev):
         """Get the value of the node's key as it was at the given revision."""
@@ -628,9 +639,7 @@ class QueryEngine(object):
             self.connection.commit()
 
     def close(self):
-        """Commit the transaction, then close the engine or connection"""
+        """Commit the transaction, then close the connection"""
         self.commit()
-        if hasattr(self, 'engine'):
-            self.engine.close()
-        else:
+        if hasattr(self, 'connection'):
             self.connection.close()
