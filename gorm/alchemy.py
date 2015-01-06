@@ -9,6 +9,7 @@ from sqlalchemy import (
     Integer,
     Boolean,
     String,
+    DateTime,
     MetaData,
     ForeignKey,
     select,
@@ -23,74 +24,97 @@ from json import dumps
 
 length = 50
 
+TEXT = String(length)
+
 
 def tables_for_meta(meta):
     return {
         'global': Table(
             'global', meta,
-            Column('key', String(length), primary_key=True),
-            Column('value', String(length), nullable=True)
+            Column('key', TEXT, primary_key=True),
+            Column('date', DateTime, nullable=True),
+            Column('creator', TEXT, nullable=True),
+            Column('description', TEXT, nullable=True),
+            Column('value', TEXT, nullable=True)
         ),
         'branches': Table(
             'branches', meta,
             Column(
-                'branch', String(length), ForeignKey('branches.parent'),
+                'branch', TEXT, ForeignKey('branches.parent'),
                 primary_key=True, default='master'
             ),
-            Column('parent', String(length), default='master'),
+            Column('date', DateTime, nullable=True),
+            Column('creator', TEXT, nullable=True),
+            Column('description', TEXT, nullable=True),
+            Column('parent', TEXT, default='master'),
             Column('parent_rev', Integer, default=0)
         ),
         'graphs': Table(
             'graphs', meta,
-            Column('graph', String(length), primary_key=True),
-            Column('type', String(length), default='Graph'),
+            Column('graph', TEXT, primary_key=True),
+            Column('date', DateTime, nullable=True),
+            Column('creator', TEXT, nullable=True),
+            Column('description', TEXT, nullable=True),
+            Column('type', TEXT, default='Graph'),
             CheckConstraint(
                 "type IN ('Graph', 'DiGraph', 'MultiGraph', 'MultiDiGraph')"
             )
         ),
         'graph_val': Table(
             'graph_val', meta,
-            Column('graph', String(length), ForeignKey('graphs.graph'),
+            Column('graph', TEXT, ForeignKey('graphs.graph'),
                    primary_key=True),
-            Column('key', String(length), primary_key=True),
-            Column('branch', String(length), ForeignKey('branches.branch'),
+            Column('key', TEXT, primary_key=True),
+            Column('branch', TEXT, ForeignKey('branches.branch'),
                    primary_key=True, default='master'),
             Column('rev', Integer, primary_key=True, default=0),
-            Column('value', String(length), nullable=True)
+            Column('date', DateTime, nullable=True),
+            Column('contributor', TEXT, nullable=True),
+            Column('description', TEXT, nullable=True),
+            Column('value', TEXT, nullable=True)
         ),
         'nodes': Table(
             'nodes', meta,
-            Column('graph', String(length), ForeignKey('graphs.graph'),
+            Column('graph', TEXT, ForeignKey('graphs.graph'),
                    primary_key=True),
-            Column('node', String(length), primary_key=True),
-            Column('branch', String(length), ForeignKey('branches.branch'),
+            Column('node', TEXT, primary_key=True),
+            Column('branch', TEXT, ForeignKey('branches.branch'),
                    primary_key=True, default='master'),
             Column('rev', Integer, primary_key=True, default=0),
+            Column('date', DateTime, nullable=True),
+            Column('creator', TEXT, nullable=True),
+            Column('description', TEXT, nullable=True),
             Column('extant', Boolean)
         ),
         'node_val': Table(
             'node_val', meta,
-            Column('graph', String(length), primary_key=True),
-            Column('node', String(length), primary_key=True),
-            Column('key', String(length), primary_key=True),
-            Column('branch', String(length), ForeignKey('branches.branch'),
+            Column('graph', TEXT, primary_key=True),
+            Column('node', TEXT, primary_key=True),
+            Column('key', TEXT, primary_key=True),
+            Column('branch', TEXT, ForeignKey('branches.branch'),
                    primary_key=True, default='master'),
             Column('rev', Integer, primary_key=True, default=0),
-            Column('value', String(length), nullable=True),
+            Column('date', DateTime, nullable=True),
+            Column('contributor', TEXT, nullable=True),
+            Column('description', TEXT, nullable=True),
+            Column('value', TEXT, nullable=True),
             ForeignKeyConstraint(
                 ['graph', 'node'], ['nodes.graph', 'nodes.node']
             )
         ),
         'edges': Table(
             'edges', meta,
-            Column('graph', String(length), ForeignKey('graphs.graph'),
+            Column('graph', TEXT, ForeignKey('graphs.graph'),
                    primary_key=True),
-            Column('nodeA', String(length), primary_key=True),
-            Column('nodeB', String(length), primary_key=True),
+            Column('nodeA', TEXT, primary_key=True),
+            Column('nodeB', TEXT, primary_key=True),
             Column('idx', Integer, primary_key=True),
-            Column('branch', String(length), ForeignKey('branches.branch'),
+            Column('branch', TEXT, ForeignKey('branches.branch'),
                    primary_key=True, default='master'),
             Column('rev', Integer, primary_key=True, default=0),
+            Column('date', DateTime, nullable=True),
+            Column('creator', TEXT, nullable=True),
+            Column('description', TEXT, nullable=True),
             Column('extant', Boolean),
             ForeignKeyConstraint(
                 ['graph', 'nodeA'], ['nodes.graph', 'nodes.node']
@@ -101,15 +125,18 @@ def tables_for_meta(meta):
         ),
         'edge_val': Table(
             'edge_val', meta,
-            Column('graph', String(length), primary_key=True),
-            Column('nodeA', String(length), primary_key=True),
-            Column('nodeB', String(length), primary_key=True),
+            Column('graph', TEXT, primary_key=True),
+            Column('nodeA', TEXT, primary_key=True),
+            Column('nodeB', TEXT, primary_key=True),
             Column('idx', Integer, primary_key=True),
-            Column('key', String(length), primary_key=True),
-            Column('branch', String(length), ForeignKey('branches.branch'),
+            Column('key', TEXT, primary_key=True),
+            Column('branch', TEXT, ForeignKey('branches.branch'),
                    primary_key=True, default='master'),
             Column('rev', Integer, primary_key=True, default=0),
-            Column('value', String(length), nullable=True),
+            Column('date', DateTime, nullable=True),
+            Column('contributor', TEXT, nullable=True),
+            Column('description', TEXT, nullable=True),
+            Column('value', TEXT, nullable=True),
             ForeignKeyConstraint(
                 ['graph', 'nodeA', 'nodeB', 'idx'],
                 ['edges.graph', 'edges.nodeA', 'edges.nodeB', 'edges.idx']
