@@ -3,7 +3,7 @@
 import networkx
 from networkx.exception import NetworkXError
 from collections import MutableMapping
-from gorm.xjson import ismutable, JSONWrapper, JSONListWrapper
+from .xjson import ismutable, JSONWrapper, JSONListWrapper
 
 
 class GraphMapping(MutableMapping):

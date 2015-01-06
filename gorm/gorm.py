@@ -1,12 +1,12 @@
 # This file is part of gorm, an object relational mapper for versioned graphs.
 # Copyright (C) 2014 Zachary Spector.
-from gorm.graph import (
+from .graph import (
     Graph,
     DiGraph,
     MultiGraph,
     MultiDiGraph,
 )
-from gorm.query import QueryEngine
+from .query import QueryEngine
 
 
 class GraphNameError(KeyError):

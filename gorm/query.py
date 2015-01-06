@@ -7,8 +7,10 @@ doesn't pollute the other files so much.
 """
 from collections import MutableMapping
 from sqlite3 import IntegrityError as sqliteIntegError
-import gorm
-from gorm.xjson import json_dump, json_load
+import xjson
+json_dump = xjson.json_dump
+json_load = xjson.json_load
+import os
 
 alchemyIntegError = None
 try:
@@ -59,7 +61,7 @@ class QueryEngine(object):
     Alchemist. Provides functions to run queries using either.
 
     """
-    json_path = gorm.__path__[0]
+    json_path = os.path.dirname(xjson.__file__)
 
     def __init__(self, dbstring, connect_args, alchemy):
         """If ``alchemy`` is True and ``dbstring`` is a legit database URI,
