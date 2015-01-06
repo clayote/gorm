@@ -9,6 +9,10 @@ from gorm.graph import (
 from gorm.query import QueryEngine
 
 
+class GraphNameError(KeyError):
+    pass
+
+
 class ORM(object):
     """Instantiate this with the same string argument you'd use for a
     SQLAlchemy ``create_engine`` call. This will be your interface to
@@ -156,7 +160,7 @@ class ORM(object):
 
     def _init_graph(self, name, type_s='Graph'):
         if self.db.have_graph(name):
-            raise KeyError("Already have a graph by that name")
+            raise GraphNameError("Already have a graph by that name")
         self.db.new_graph(name, type_s)
 
     def new_graph(self, name, data=None, **attr):
@@ -205,7 +209,7 @@ class ORM(object):
         }
         type_s = self.db.graph_type(name)
         if type_s not in graphtypes:
-            raise ValueError("I don't know of a graph named {}".format(name))
+            raise GraphNameError("I don't know of a graph named {}".format(name))
         return graphtypes[type_s](self, name)
 
     def del_graph(self, name):
