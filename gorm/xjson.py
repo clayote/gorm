@@ -60,6 +60,10 @@ def json_load(s):
     """JSON loader that distinguishes lists from tuples"""
     if s is None:
         return None
+    if s == '["list"]':
+        return []
+    if s == '["tuple"]':
+        return tuple()
     if s not in json_load_hints:
         json_load_hints[s] = dec_tuple(loads(s))
     return json_load_hints[s]
