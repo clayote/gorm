@@ -5,8 +5,10 @@ code that's more to do with the queries than with the data per se
 doesn't pollute the other files so much.
 
 """
+import os
 from collections import MutableMapping
 from sqlite3 import IntegrityError as sqliteIntegError
+from sqlite3 import ProgrammingError, connect, Connection
 try:
     # python 2
     import xjson
@@ -15,7 +17,7 @@ except ImportError:
     from gorm import xjson
 json_dump = xjson.json_dump
 json_load = xjson.json_load
-import os
+
 xjpath = os.path.dirname(xjson.__file__)
 
 alchemyIntegError = None
@@ -94,7 +96,6 @@ class QueryEngine(object):
             self.transaction = self.alchemist.conn.begin()
 
         def lite_init(dbstring, connect_args):
-            from sqlite3 import connect, Connection
             from json import loads
             self.strings = loads(
                 open(self.json_path + '/sqlite.json', 'r').read()
@@ -105,7 +106,7 @@ class QueryEngine(object):
                 if dbstring.startswith('sqlite:'):
                     slashidx = dbstring.rindex('/')
                     dbstring = dbstring[slashidx+1:]
-                self.connection = connect(dbstring)
+                self.dbstring = dbstring
 
         if alchemy:
             try:
@@ -117,6 +118,12 @@ class QueryEngine(object):
 
         self.globl = GlobalKeyValueStore(self)
         self._branches = {}
+
+    def cursor(self):
+        if hasattr(self, 'connection'):
+            return self.connection.cursor()
+        else:
+            return connect(self.dbstring).cursor()
 
     def sql(self, stringname, *args, **kwargs):
         """Wrapper for the various prewritten or compiled SQL calls.
@@ -131,7 +138,7 @@ class QueryEngine(object):
             return getattr(self.alchemist, stringname)(*args, **kwargs)
         else:
             s = self.strings[stringname]
-            return self.connection.cursor().execute(
+            return self.cursor().execute(
                 s.format(**kwargs) if kwargs else s, args
             )
 
@@ -591,7 +598,7 @@ class QueryEngine(object):
                 self.globl['rev'] = 0
             return
         from sqlite3 import OperationalError
-        cursor = self.connection.cursor()
+        cursor = self.cursor()
         try:
             cursor.execute('SELECT * FROM global;')
         except OperationalError:
@@ -643,7 +650,7 @@ class QueryEngine(object):
         """Commit the transaction"""
         if hasattr(self, 'transaction'):
             self.transaction.commit()
-        else:
+        elif hasattr(self, 'connection'):
             self.connection.commit()
 
     def close(self):
