@@ -658,7 +658,7 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
             """Unset the existence of the edge from the given node to mine"""
             self.gorm.db.exist_edge(
                 self.graph.name,
-                self.nodeA,
+                nodeA,
                 self.nodeB,
                 0,
                 self.gorm.branch,
