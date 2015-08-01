@@ -4,6 +4,7 @@ import networkx
 from networkx.exception import NetworkXError
 from collections import MutableMapping
 from .xjson import ismutable, JSONWrapper, JSONListWrapper
+from .reify import reify
 
 
 class GraphMapping(MutableMapping):
@@ -813,12 +814,14 @@ class GormGraph(object):
     common.
 
     """
-    def _init_atts(self, gorm, name):
-        """Initialize the mappings that are the same for all gorm graphs"""
-        self._name = name
-        self.gorm = gorm
-        self.graph = GraphMapping(self)
-        self.node = GraphNodeMapping(self)
+
+    @reify
+    def graph(self):
+        return GraphMapping(self)
+
+    @reify
+    def node(self):
+        return GraphNodeMapping(self)
 
     @property
     def name(self):
@@ -861,16 +864,19 @@ class Graph(GormGraph, networkx.Graph):
 
     """
     def __init__(self, gorm, name, data=None, **attr):
-        """Call ``_init_atts``, instantiate special mappings, convert ``data``
-        argument, and then update graph attributes from kwargs.
-
-        """
-        self._init_atts(gorm, name)
-        self.adj = GraphSuccessorsMapping(self)
-        self.edge = self.adj
+        self._name = name
+        self.gorm = gorm
         if data is not None:
             networkx.convert.to_networkx_graph(data, create_using=self)
         self.graph.update(attr)
+
+    @reify
+    def adj(self):
+        return GraphSuccessorsMapping(self)
+
+    @property
+    def edge(self):
+        return self.adj
 
 
 class DiGraph(GormGraph, networkx.DiGraph):
@@ -879,17 +885,23 @@ class DiGraph(GormGraph, networkx.DiGraph):
 
     """
     def __init__(self, gorm, name, data=None, **attr):
-        """Call ``_init_atts``, instantiate special mappings, convert ``data``
-        argument, and then update graph attributes from kwargs.
-
-        """
-        self._init_atts(gorm, name)
-        self.adj = DiGraphSuccessorsMapping(self)
-        self.pred = DiGraphPredecessorsMapping(self)
-        self.succ = self.adj
+        self._name = name
+        self.gorm = gorm
         if data is not None:
             networkx.convert.to_networkx_graph(data, create_using=self)
         self.graph.update(attr)
+
+    @reify
+    def adj(self):
+        return DiGraphSuccessorsMapping(self)
+
+    @property
+    def succ(self):
+        return self.adj
+
+    @reify
+    def pred(self):
+        return DiGraphPredecessorsMapping(self)
 
     def remove_edge(self, u, v):
         """Version of remove_edge that's much like normal networkx but only
@@ -983,12 +995,19 @@ class MultiGraph(GormGraph, networkx.MultiGraph):
         argument, and then update graph attributes from kwargs.
 
         """
-        self._init_atts(gorm, name)
-        self.adj = MultiGraphSuccessorsMapping(gorm, name)
-        self.edge = self.adj
+        self.gorm = gorm
+        self._name = name
         if data is not None:
             networkx.convert.to_networkx_graph(data, create_using=self)
         self.graph.update(attr)
+
+    @reify
+    def adj(self):
+        return MultiGraphSuccessorsMapping(self.gorm, self._name)
+
+    @property
+    def edge(self):
+        return self.adj
 
 
 class MultiDiGraph(GormGraph, networkx.MultiDiGraph):
@@ -1001,13 +1020,23 @@ class MultiDiGraph(GormGraph, networkx.MultiDiGraph):
         argument, and then update graph attributes from kwargs.
 
         """
-        self._init_atts(gorm, name)
-        self.adj = MultiGraphSuccessorsMapping(gorm, name)
-        self.pred = MultiDiGraphPredecessorsMapping(gorm, name)
-        self.succ = self.adj
+        self.gorm = gorm
+        self._name = name
         if data is not None:
             networkx.convert.to_networkx_graph(data, create_using=self)
         self.graph.update(attr)
+
+    @reify
+    def adj(self):
+        return MultiGraphSuccessorsMapping(self.gorm, self._name)
+
+    @property
+    def succ(self):
+        return self.adj
+
+    @reify
+    def pred(self):
+        return MultiDiGraphPredecessorsMapping(self.gorm, self._name)
 
     def remove_edge(self, u, v, key=None):
         """Version of remove_edge that's much like normal networkx but only
