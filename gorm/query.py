@@ -138,6 +138,10 @@ class QueryEngine(object):
                 s.format(**kwargs) if kwargs else s, args
             )
 
+    def timestream_data(self):
+        for row in self.sql('allbranch'):
+            yield tuple(row)
+
     def active_branches(self, branch, rev):
         """Yield a series of ``(branch, rev)`` pairs, starting with the
         ``branch`` and ``rev`` provided; proceeding to the parent
@@ -237,6 +241,17 @@ class QueryEngine(object):
         """
         return self.sql('new_branch', branch, parent, parent_rev)
 
+    def graph_val_dump(self):
+        """Yield the entire contents of the graph_val table."""
+        for (graph, key, branch, rev, value) in self.sql('graph_val_dump'):
+            yield (
+                self.json_load(graph),
+                self.json_load(key),
+                branch,
+                rev,
+                self.json_load(value)
+            )
+
     def graph_val_keys(self, graph, branch, rev):
         """Return an iterable of keys that are set on the graph at the given
         revision.
@@ -332,6 +347,29 @@ class QueryEngine(object):
         except IntegrityError:
             self.sql('exist_node_upd', extant, graph, node, branch, rev)
 
+    def nodes_dump(self):
+        """Dump the entire contents of the nodes table."""
+        for (graph, node, branch, tick, extant) in self.sql('nodes_dump'):
+            yield (
+                self.json_load(graph),
+                self.json_load(node),
+                branch,
+                tick,
+                bool(extant)
+            )
+
+    def node_val_dump(self):
+        """Yield the entire contents of the node_val table."""
+        for (graph, node, key, branch, rev, value) in self.sql('node_val_dump'):
+            yield (
+                self.json_load(graph),
+                self.json_load(node),
+                self.json_load(key),
+                branch,
+                rev,
+                self.json_load(value)
+            )
+
     def node_val_keys(self, graph, node, branch, rev):
         """Return an iterable of keys that are set on the node at the given
         revision.
@@ -401,6 +439,19 @@ class QueryEngine(object):
         except IntegrityError:
             return self.sql(
                 'node_val_upd', None, graph, node, key, branch, rev
+            )
+
+    def edges_dump(self):
+        """Dump the entire contents of the edges table."""
+        for (graph, nodeA, nodeB, idx, branch, rev, extant) in self.sql('edges_dump'):
+            yield (
+                self.json_load(graph),
+                self.json_load(nodeA),
+                self.json_load(nodeB),
+                idx,
+                branch,
+                rev,
+                bool(extant)
             )
 
     def edges_extant(self, graph, branch, rev):
@@ -493,6 +544,20 @@ class QueryEngine(object):
         except IntegrityError:
             self.sql(
                 'edge_exist_upd', extant, graph, nodeA, nodeB, idx, branch, rev
+            )
+
+    def edge_val_dump(self):
+        """Yield the entire contents of the edge_val table."""
+        for (graph, nodeA, nodeB, idx, key, branch, rev, value) in self.sql('edge_val_dump'):
+            yield (
+                self.json_load(graph),
+                self.json_load(nodeA),
+                self.json_load(nodeB),
+                idx,
+                self.json_load(key),
+                branch,
+                rev,
+                self.json_load(value)
             )
 
     def edge_val_keys(self, graph, nodeA, nodeB, idx, branch, rev):

@@ -1,5 +1,6 @@
 # This file is part of gorm, an object relational mapper for versioned graphs.
 # Copyright (C) 2014 Zachary Spector.
+from collections import defaultdict, deque
 from .graph import (
     Graph,
     DiGraph,
@@ -24,20 +25,100 @@ class ORM(object):
             dbstring,
             alchemy=True,
             connect_args={},
-            obranch=None,
-            orev=None,
             query_engine_class=QueryEngine,
             json_dump=None,
-            json_load=None
+            json_load=None,
+            caching=True
     ):
         """Make a SQLAlchemy engine if possible, else a sqlite3 connection. In
         either case, begin a transaction.
 
         """
         self.db = query_engine_class(dbstring, connect_args, alchemy, json_dump, json_load)
-        self._obranch = obranch
-        self._orev = orev
         self._branches = {}
+        self._obranch = None
+        self._orev = None
+        self.db.initdb()
+        if caching:
+            self.caching = True
+            self._obranch = self.branch
+            self._orev = self.rev
+            self._timestream = {'master': {}}
+            self._branch_start = {}
+            self._branches = {'master': self._timestream['master']}
+            self._branch_parents = {}
+            self._active_branches_cache = []
+            self.db.active_branches = self._active_branches
+            todo = deque(self.db.timestream_data())
+            while todo:
+                (branch, parent, parent_tick) = working = todo.popleft()
+                if branch == 'master':
+                    continue
+                if parent in self._branches:
+                    assert(branch not in self._branches)
+                    self._branches[parent][branch] = {}
+                    self._branches[branch] = self._branches[parent][branch]
+                    self._branch_parents['branch'] = parent
+                    self._branch_start[branch] = parent_tick
+                else:
+                    todo.append(working)
+            self._graph_val_cache = defaultdict(  # graph:
+                lambda: defaultdict(  # key:
+                    lambda: defaultdict(  # branch:
+                        dict  # rev: value
+                    )
+                )
+            )
+            self._node_val_cache = defaultdict(  # graph:
+                lambda: defaultdict(  # node:
+                    lambda: defaultdict(  # key:
+                        lambda: defaultdict(  # branch:
+                            dict  # rev: value
+                        )
+                    )
+                )
+            )
+            self._nodes_cache = defaultdict(  # graph:
+                lambda: defaultdict(  # node:
+                    lambda: defaultdict(  # branch:
+                        dict  # rev: extant
+                    )
+                )
+            )
+            self._edge_val_cache = defaultdict(  # graph:
+                lambda: defaultdict(  # nodeA:
+                    lambda: defaultdict(  # nodeB:
+                        lambda: defaultdict(  # idx:
+                            lambda: defaultdict(  # key:
+                                lambda: defaultdict(  # branch:
+                                    dict  # rev: value
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+            self._edges_cache = defaultdict(  # graph:
+                lambda: defaultdict(  # nodeA:
+                    lambda: defaultdict(  # nodeB:
+                        lambda: defaultdict(  # idx:
+                            lambda: defaultdict(  # branch:
+                                dict  # rev: extant
+                            )
+                        )
+                    )
+                )
+            )
+            for (graph, key, branch, rev, value) in self.db.graph_val_dump():
+                self._graph_val_cache[graph][key][branch][rev] = value
+            for (graph, node, key, branch, rev, value) in self.db.node_val_dump():
+                self._node_val_cache[graph][node][key][branch][rev] = value
+            for (graph, node, branch, rev, extant) in self.db.nodes_dump():
+                self._nodes_cache[graph][node][branch][rev] = extant
+            for (graph, nodeA, nodeB, idx, key, branch, rev, value) in self.db.edge_val_dump():
+                self._edge_val_cache[graph][nodeA][nodeB][idx][key][branch][rev] = value
+            for (graph, nodeA, nodeB, idx, branch, rev, extant) in self.db.edges_dump():
+                self._edges_cache[graph][nodeA][nodeB][idx][branch][rev] = extant
 
     def __enter__(self):
         """Enable the use of the ``with`` keyword"""
@@ -49,7 +130,7 @@ class ORM(object):
 
     def _havebranch(self, b):
         """Private use. Checks that the branch is known about."""
-        if b in self._branches:
+        if self.caching and b in self._branches:
             return True
         return self.db.have_branch(b)
 
@@ -110,7 +191,13 @@ class ORM(object):
             return
         # make sure I'll end up within the revision range of the
         # destination branch
-        parrev = self.db.parrev(v)
+        if self.caching:
+            if v not in self._branch_parents:
+                self._branch_parents[v] = curbranch
+                self._branch_start[v] = currev
+            parrev = self._branch_start[v]
+        else:
+            parrev = self.db.parrev(v)
         if currev < parrev:
             raise ValueError(
                 "Tried to jump to branch {br}, which starts at revision {rv}. "
@@ -120,6 +207,8 @@ class ORM(object):
                 )
             )
         self.db.globl['branch'] = v
+        if self.engine.caching:
+            self._obranch = v
 
     @property
     def rev(self):
@@ -138,7 +227,11 @@ class ORM(object):
         # first make sure the cursor is not before the start of this branch
         branch = self.branch
         if branch != 'master':
-            (parent, parent_rev) = self.db.parparrev(branch)
+            if self.caching:
+                parent = self._branch_parents[branch]
+                parent_rev = self._branch_start[branch]
+            else:
+                (parent, parent_rev) = self.db.parparrev(branch)
             if v < int(parent_rev):
                 raise ValueError(
                     "The revision number {revn} "
@@ -147,6 +240,8 @@ class ORM(object):
                 )
         self.db.globl['rev'] = v
         assert(self.rev == v)
+        if self.caching:
+            self._orev = v
 
     def commit(self):
         """Alias of ``self.db.commit``"""
@@ -227,9 +322,31 @@ class ORM(object):
         latest revision in the branch that matters.
 
         """
-        if branch is None:
-            branch = self.branch
-        if rev is None:
-            rev = self.rev
-        for (b, r) in self.db.active_branches(branch, rev):
-            yield (b, r)
+        b = branch or self.branch
+        r = rev or self.rev
+        if self.caching:
+            yield b, r
+            while b in self._branch_parents:
+                r = self._branch_start[b]
+                b = self._branch_parents[b]
+                yield b, r
+            return
+
+        for pair in self.db.active_branches(b, r):
+            yield pair
+
+    def _branch_descendants(self, branch=None):
+        """Iterate over all branches immediately descended from the current
+        one (or the given one, if available).
+
+        """
+        branch = branch or self.branch
+        if not self.caching:
+            for desc in self.db.branch_descendants(branch):
+                yield desc
+            return
+        for b in self._branches[branch].keys():
+            yield b
+        for child in self._branches[branch].keys():
+            for b in self._branch_descendants(child):
+                yield b

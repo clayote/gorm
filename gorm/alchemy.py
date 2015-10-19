@@ -466,6 +466,13 @@ def queries_for_table_dict(table):
                 table['nodes'].c.rev == bindparam('rev')
             )
         ),
+        'nodes_dump': select([
+            table['nodes'].c.graph,
+            table['nodes'].c.node,
+            table['nodes'].c.branch,
+            table['nodes'].c.rev,
+            table['nodes'].c.extant
+        ]),
         'graph_val_items': select(
             [
                 table['graph_val'].c.key,
@@ -480,6 +487,13 @@ def queries_for_table_dict(table):
                 ]
             )
         ),
+        'graph_val_dump': select([
+            table['graph_val'].c.graph,
+            table['graph_val'].c.key,
+            table['graph_val'].c.branch,
+            table['graph_val'].c.rev,
+            table['graph_val'].c.value
+        ]),
         'graph_val_get': select(
             [
                 table['graph_val'].c.value
@@ -526,6 +540,14 @@ def queries_for_table_dict(table):
                 ]
             )
         ),
+        'node_val_dump': select([
+            table['node_val'].c.graph,
+            table['node_val'].c.node,
+            table['node_val'].c.key,
+            table['node_val'].c.branch,
+            table['node_val'].c.rev,
+            table['node_val'].c.value
+        ]),
         'node_val_get': select(
             [
                 table['node_val'].c.value
@@ -636,6 +658,15 @@ def queries_for_table_dict(table):
                 ]
             )
         ),
+        'edges_dump': select([
+            table['edges'].c.graph,
+            table['edges'].c.nodeA,
+            table['edges'].c.nodeB,
+            table['edges'].c.idx,
+            table['edges'].c.branch,
+            table['edges'].c.rev,
+            table['edges'].c.extant
+        ]),
         'edge_exist_ins': table['edges'].insert().values(
             graph=bindparam('graph'),
             nodeA=bindparam('orig'),
@@ -657,6 +688,16 @@ def queries_for_table_dict(table):
                 table['edges'].c.rev == bindparam('rev')
             )
         ),
+        'edge_val_dump': select([
+            table['edge_val'].c.graph,
+            table['edge_val'].c.nodeA,
+            table['edge_val'].c.nodeB,
+            table['edge_val'].c.idx,
+            table['edge_val'].c.key,
+            table['edge_val'].c.branch,
+            table['edge_val'].c.rev,
+            table['edge_val'].c.value
+        ]),
         'edge_val_items': select(
             [
                 table['edge_val'].c.key,
