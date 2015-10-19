@@ -3,7 +3,13 @@
 import networkx
 from networkx.exception import NetworkXError
 from collections import MutableMapping
-from .xjson import ismutable, JSONWrapper, JSONListWrapper
+from .xjson import (
+    ismutable,
+    JSONWrapper,
+    JSONListWrapper,
+    JSONReWrapper,
+    JSONListReWrapper
+)
 from .reify import reify
 
 
@@ -109,15 +115,25 @@ class GraphMapping(MutableMapping):
             return dict(self)
         for (branch, rev) in self.gorm._active_branches():
             try:
-                r = self.gorm.db.graph_val_get(
-                    self.graph.name,
-                    key,
-                    branch,
-                    rev
-                )
+                if self.gorm.caching:
+                    cache = self.gorm._graph_val_cache[self.graph.name][key]
+                    r = cache[branch][max(
+                        rv for rv in cache[branch] if rv <= rev
+                    )]
+                else:
+                    r = self.gorm.db.graph_val_get(
+                        self.graph.name,
+                        key,
+                        branch,
+                        rev
+                    )
                 if isinstance(r, list):
+                    if self.gorm.caching:
+                        return JSONListReWrapper(self, key, r)
                     return JSONListWrapper(self, key)
                 elif ismutable(r):
+                    if self.gorm.caching:
+                        return JSONReWrapper(self, key, r)
                     return JSONWrapper(self, key)
                 else:
                     return r
@@ -238,8 +254,12 @@ class Node(GraphMapping):
         """Get the value of the key at the present branch and rev"""
         r = self._get(key)
         if isinstance(r, list):
+            if self.gorm.caching:
+                return JSONListReWrapper(self, key, r)
             return JSONListWrapper(self, key)
         elif ismutable(r):
+            if self.gorm.caching:
+                return JSONReWrapper(self, key, r)
             return JSONWrapper(self, key)
         else:
             return r
@@ -359,8 +379,12 @@ class Edge(GraphMapping):
         """
         r = self._get(key)
         if isinstance(r, list):
+            if self.gorm.caching:
+                return JSONListReWrapper(self, key, r)
             return JSONListWrapper(self, key)
         elif ismutable(r):
+            if self.gorm.caching:
+                return JSONReWrapper(self, key, r)
             return JSONWrapper(self, key)
         else:
             return r
