@@ -70,21 +70,6 @@ def json_load(s):
     return json_load_hints[s]
 
 
-def ismutable(v):
-    try:
-        if isinstance(v, long):
-            return False
-    except NameError:
-        pass
-    return not (
-        isinstance(v, str) or
-        isinstance(v, int) or
-        isinstance(v, bool) or
-        isinstance(v, float) or
-        isinstance(v, tuple)
-    )
-
-
 class JSONWrapper(MutableMapping):
     def __init__(self, outer, outkey):
         self.outer = outer
@@ -111,7 +96,7 @@ class JSONWrapper(MutableMapping):
         r = self._get()[k]
         if isinstance(r, list):
             return JSONListWrapper(self, k)
-        elif ismutable(r):
+        elif isinstance(r, dict):
             return JSONWrapper(self, k)
         else:
             return r

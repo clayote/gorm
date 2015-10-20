@@ -8,6 +8,7 @@ from .graph import (
     MultiDiGraph,
 )
 from .query import QueryEngine
+from .reify import reify
 
 
 class GraphNameError(KeyError):
@@ -20,6 +21,92 @@ class ORM(object):
     gorm.
 
     """
+    @reify
+    def _graph_val_cache(self):
+        assert(self.caching)
+        r = defaultdict(  # graph:
+            lambda: defaultdict(  # key:
+                lambda: defaultdict(  # branch:
+                    dict  # rev: value
+                )
+            )
+        )
+        for (graph, key, branch, rev, value) in self.db.graph_val_dump():
+            r[graph][key][branch][rev] = value
+        return r
+
+    @reify
+    def _node_val_cache(self):
+        assert(self.caching)
+        r = defaultdict(  # graph:
+            lambda: defaultdict(  # node:
+                lambda: defaultdict(  # key:
+                    lambda: defaultdict(  # branch:
+                        dict  # rev: value
+                    )
+                )
+            )
+        )
+        for (graph, node, key, branch, rev, value) in self.db.node_val_dump():
+            r[graph][node][key][branch][rev] = value
+        return r
+
+    @reify
+    def _nodes_cache(self):
+        assert(self.caching)
+        r = defaultdict(  # graph:
+            lambda: defaultdict(  # node:
+                lambda: defaultdict(  # branch:
+                    dict  # rev: extant
+                )
+            )
+        )
+        for (graph, node, branch, rev, extant) in self.db.nodes_dump():
+            r[graph][node][branch][rev] = extant
+        return r
+
+    @reify
+    def _edge_val_cache(self):
+        assert(self.caching)
+        r = defaultdict(  # graph:
+            lambda: defaultdict(  # nodeA:
+                lambda: defaultdict(  # nodeB:
+                    lambda: defaultdict(  # idx:
+                        lambda: defaultdict(  # key:
+                            lambda: defaultdict(  # branch:
+                                dict  # rev: value
+                            )
+                        )
+                    )
+                )
+            )
+        )
+        for (
+                graph, nodeA, nodeB, idx, key, branch, rev, value
+        ) in self.db.edge_val_dump():
+            r[graph][nodeA][nodeB][idx][key][branch][rev] = value
+        return r
+
+    @reify
+    def _edges_cache(self):
+        assert self.caching
+        r = defaultdict(  # graph:
+            lambda: defaultdict(  # nodeA:
+                lambda: defaultdict(  # nodeB:
+                    lambda: defaultdict(  # idx:
+                        lambda: defaultdict(  # branch:
+                            dict  # rev: extant
+                        )
+                    )
+                )
+            )
+        )
+        for (
+                graph, nodeA, nodeB, idx, branch, rev, extant
+        ) in self.db.edges_dump():
+            r[graph][nodeA][nodeB][idx][branch][rev] = extant
+        return r
+
     def __init__(
             self,
             dbstring,
@@ -62,63 +149,6 @@ class ORM(object):
                     self._branch_start[branch] = parent_tick
                 else:
                     todo.append(working)
-            self._graph_val_cache = defaultdict(  # graph:
-                lambda: defaultdict(  # key:
-                    lambda: defaultdict(  # branch:
-                        dict  # rev: value
-                    )
-                )
-            )
-            self._node_val_cache = defaultdict(  # graph:
-                lambda: defaultdict(  # node:
-                    lambda: defaultdict(  # key:
-                        lambda: defaultdict(  # branch:
-                            dict  # rev: value
-                        )
-                    )
-                )
-            )
-            self._nodes_cache = defaultdict(  # graph:
-                lambda: defaultdict(  # node:
-                    lambda: defaultdict(  # branch:
-                        dict  # rev: extant
-                    )
-                )
-            )
-            self._edge_val_cache = defaultdict(  # graph:
-                lambda: defaultdict(  # nodeA:
-                    lambda: defaultdict(  # nodeB:
-                        lambda: defaultdict(  # idx:
-                            lambda: defaultdict(  # key:
-                                lambda: defaultdict(  # branch:
-                                    dict  # rev: value
-                                )
-                            )
-                        )
-                    )
-                )
-            )
-            self._edges_cache = defaultdict(  # graph:
-                lambda: defaultdict(  # nodeA:
-                    lambda: defaultdict(  # nodeB:
-                        lambda: defaultdict(  # idx:
-                            lambda: defaultdict(  # branch:
-                                dict  # rev: extant
-                            )
-                        )
-                    )
-                )
-            )
-            for (graph, key, branch, rev, value) in self.db.graph_val_dump():
-                self._graph_val_cache[graph][key][branch][rev] = value
-            for (graph, node, key, branch, rev, value) in self.db.node_val_dump():
-                self._node_val_cache[graph][node][key][branch][rev] = value
-            for (graph, node, branch, rev, extant) in self.db.nodes_dump():
-                self._nodes_cache[graph][node][branch][rev] = extant
-            for (graph, nodeA, nodeB, idx, key, branch, rev, value) in self.db.edge_val_dump():
-                self._edge_val_cache[graph][nodeA][nodeB][idx][key][branch][rev] = value
-            for (graph, nodeA, nodeB, idx, branch, rev, extant) in self.db.edges_dump():
-                self._edges_cache[graph][nodeA][nodeB][idx][branch][rev] = extant
 
     def __enter__(self):
         """Enable the use of the ``with`` keyword"""
