@@ -767,26 +767,24 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
         """Iterate over nodes that have at least one outgoing edge"""
         if self.gorm.caching:
             from .window import window_left
-            cache = self.gorm._edges_cache[self.graph.name][self.nodeA]
+            cache = self.gorm._edges_cache[self.graph.name]
             seen = set()
-            for nodeB in cache:
-                if nodeB in seen:
-                    continue
-                for idx in cache[nodeB]:
-                    if nodeB in seen:
-                        break
-                    for (branch, rev) in self.gorm._active_branches():
-                        if branch in cache[nodeB][idx]:
-                            try:
-                                if cache[nodeB][idx][branch][
-                                    window_left(cache[nodeB][idx][branch].keys(), rev)
-                                ]:
-                                    if nodeB not in seen:
-                                        yield nodeB
-                                seen.add(nodeB)
-                                break
-                            except ValueError:
-                                continue
+            for nodeA in cache:
+                for nodeB in cache[nodeA]:
+                    for idx in cache[nodeA][nodeB]:
+                        if nodeA in seen:
+                            break
+                        for (branch, rev) in self.gorm._active_branches():
+                            if branch in cache[nodeA][nodeB][idx]:
+                                try:
+                                    cache2 = cache[nodeA][nodeB][idx][branch]
+                                    if cache2[window_left(cache2.keys(), rev)]:
+                                        if nodeA not in seen:
+                                            yield nodeA
+                                        seen.add(nodeA)
+                                        break
+                                except ValueError:
+                                    continue
             return
         for nodeB in self.gorm.db.edges_extant(
             self.graph.name,
