@@ -29,6 +29,8 @@ class GraphMapping(MutableMapping):
                 if k in seen:
                     continue
                 for (branch, rev) in self.gorm._active_branches():
+                    if branch not in cache[k]:
+                        continue
                     try:
                         v = cache[k][branch][
                             window_left(cache[k][branch].keys(), rev)
