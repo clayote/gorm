@@ -349,11 +349,12 @@ class Edge(GraphMapping):
                         continue
                     try:
                         result = cache[k][branch][
-                            window_left(cache[branch].keys(), rev)
+                            window_left(cache[k][branch].keys(), rev)
                         ]
                         if result is not None:
                             yield k
                         seen.add(k)
+                        break
                     except ValueError:
                         continue
             return
