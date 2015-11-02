@@ -714,11 +714,11 @@ class AbstractSuccessors(GraphEdgeMapping):
             self.gorm.rev,
             True
         )
+        if self.gorm.caching:
+            self.gorm._edges_cache[self.graph.name][self.nodeA][nodeB][0][self.gorm.branch][self.gorm.rev] = True
         e = self[nodeB]
         e.clear()
         e.update(value)
-        if self.gorm.caching:
-            self.gorm._edges_cache[self.graph.name][self.nodeA][nodeB][0] = True
 
     def __delitem__(self, nodeB):
         """Remove the edge between my nodeA and the given nodeB"""
