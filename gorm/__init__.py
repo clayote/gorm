@@ -24,10 +24,11 @@ class ORM(object):
     @reify
     def _graph_val_cache(self):
         assert(self.caching)
+        from .window import WindowDict
         r = defaultdict(  # graph:
             lambda: defaultdict(  # key:
                 lambda: defaultdict(  # branch:
-                    dict  # rev: value
+                    WindowDict  # rev: value
                 )
             )
         )
@@ -38,11 +39,12 @@ class ORM(object):
     @reify
     def _node_val_cache(self):
         assert(self.caching)
+        from .window import WindowDict
         r = defaultdict(  # graph:
             lambda: defaultdict(  # node:
                 lambda: defaultdict(  # key:
                     lambda: defaultdict(  # branch:
-                        dict  # rev: value
+                        WindowDict  # rev: value
                     )
                 )
             )
@@ -54,10 +56,11 @@ class ORM(object):
     @reify
     def _nodes_cache(self):
         assert(self.caching)
+        from .window import WindowDict
         r = defaultdict(  # graph:
             lambda: defaultdict(  # node:
                 lambda: defaultdict(  # branch:
-                    dict  # rev: extant
+                    WindowDict  # rev: extant
                 )
             )
         )
@@ -68,13 +71,14 @@ class ORM(object):
     @reify
     def _edge_val_cache(self):
         assert(self.caching)
+        from .window import WindowDict
         r = defaultdict(  # graph:
             lambda: defaultdict(  # nodeA:
                 lambda: defaultdict(  # nodeB:
                     lambda: defaultdict(  # idx:
                         lambda: defaultdict(  # key:
                             lambda: defaultdict(  # branch:
-                                dict  # rev: value
+                                WindowDict  # rev: value
                             )
                         )
                     )
@@ -90,12 +94,13 @@ class ORM(object):
     @reify
     def _edges_cache(self):
         assert self.caching
+        from .window import WindowDict
         r = defaultdict(  # graph:
             lambda: defaultdict(  # nodeA:
                 lambda: defaultdict(  # nodeB:
                     lambda: defaultdict(  # idx:
                         lambda: defaultdict(  # branch:
-                            dict  # rev: extant
+                            WindowDict  # rev: extant
                         )
                     )
                 )

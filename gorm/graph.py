@@ -22,24 +22,17 @@ class GraphMapping(MutableMapping):
     def __iter__(self):
         """Iterate over the keys that are set"""
         if self.gorm.caching:
-            from .window import window_left
-            seen = set()
             cache = self.gorm._graph_val_cache[self.graph.name]
             for k in cache:
-                if k in seen:
-                    continue
                 for (branch, rev) in self.gorm._active_branches():
                     if branch not in cache[k]:
                         continue
                     try:
-                        v = cache[k][branch][
-                            window_left(cache[k][branch].keys(), rev)
-                        ]
+                        v = cache[k][branch][rev]
                         if v is not None:
                             yield k
-                        seen.add(k)
-                        continue
-                    except ValueError:
+                        break
+                    except KeyError:
                         continue
             return
         seen = set()
@@ -56,14 +49,13 @@ class GraphMapping(MutableMapping):
     def __contains__(self, k):
         """Do I have a value for this key right now?"""
         if self.gorm.caching:
-            from .window import window_left
             cache = self.gorm._graph_val_cache[self.graph.name][k]
             for (branch, rev) in self.gorm._active_branches():
+                if branch not in cache:
+                    continue
                 try:
-                    return cache[branch][
-                        window_left(cache[branch].keys(), rev)
-                    ]
-                except (KeyError, ValueError):
+                    return cache[branch][rev]
+                except KeyError:
                     continue
             return False
         return self.gorm.db.graph_val_get(
@@ -83,20 +75,18 @@ class GraphMapping(MutableMapping):
     def _get(self, key):
         """Just load value from database and return"""
         if self.gorm.caching:
-            from .window import window_left
             cache = self.gorm._graph_val_cache[self.graph.name][key]
             for (branch, rev) in self.gorm._active_branches():
-                if branch in cache:
-                    try:
-                        result = cache[branch][
-                            window_left(cache[branch].keys(), rev)
-                        ]
-                        if result is None:
-                            raise KeyError("Key is not set now")
-                        return result
-                    except ValueError:
-                        continue
-            raise KeyError("Key is not set, ever")
+                if branch not in cache:
+                    continue
+                try:
+                    result = cache[branch][rev]
+                    if result is None:
+                        raise KeyError("Key {} is not set now".format(key))
+                    return result
+                except KeyError:
+                    continue
+            raise KeyError("Key {} is not set, ever".format(key))
         for (branch, rev) in self.gorm._active_branches():
             result = self.gorm.db.graph_val_get(
                 self.graph.name,
@@ -130,21 +120,18 @@ class GraphMapping(MutableMapping):
         if key == 'graph':
             return dict(self)
         if self.gorm.caching:
-            from .window import window_left
             cache = self.gorm._graph_val_cache[self.graph.name][key]
             for (branch, rev) in self.gorm._active_branches():
                 if branch not in cache:
                     continue
                 try:
-                    r = cache[branch][
-                        window_left(cache[branch].keys(), rev)
-                    ]
+                    r = cache[branch][rev]
                     if r is None:
-                        raise KeyError("key is not set now")
+                        raise KeyError("key {} is not set now".format(key))
                     return wrapval(r)
-                except ValueError:
+                except KeyError:
                     continue
-            raise KeyError("key is not set, ever")
+            raise KeyError("key {} is not set, ever".format(key))
         return wrapval(self.gorm.db.graph_val_get(
             self.graph.name,
             key,
@@ -217,25 +204,18 @@ class Node(GraphMapping):
 
         """
         if self.gorm.caching:
-            from .window import window_left
             cache = self.gorm._node_val_cache[self.graph.name][self.node]
             for key in cache:
                 for (branch, rev) in self.gorm._active_branches():
-                    if branch in cache[key]:
-                        if rev in cache[key][branch]:
-                            v = cache[key][branch][rev]
-                            if v is not None:
-                                yield key
-                            break
-                        try:
-                            v = cache[key][branch][
-                                window_left(cache[key][branch].keys(), rev)
-                            ]
-                            if v is not None:
-                                yield key
-                            break
-                        except ValueError:
-                            continue
+                    if branch not in cache[key]:
+                        continue
+                    try:
+                        v = cache[key][branch][rev]
+                        if v is not None:
+                            yield key
+                        break
+                    except KeyError:
+                        continue
             return
 
         for k in self.gorm.db.node_val_keys(
@@ -248,16 +228,19 @@ class Node(GraphMapping):
 
     def _get(self, key):
         if self.gorm.caching:
-            from .window import window_left
             cache = self.gorm._node_val_cache[self.graph.name][self.node][key]
             for (branch, rev) in self.gorm._active_branches():
-                try:
-                    return cache[branch][
-                        window_left(cache[branch].keys(), rev)
-                    ]
-                except ValueError:
+                if branch not in cache:
                     continue
-            raise KeyError("Key never set")
+                try:
+                    r = cache[branch][rev]
+                except KeyError:
+                    continue
+                if r is None:
+                    raise KeyError("Key {} is not set now".format(key))
+                else:
+                    return key
+            raise KeyError("Key {} is never set".format(key))
         return self.gorm.db.node_val_get(
             self.graph.name,
             self.node,
@@ -338,24 +321,17 @@ class Edge(GraphMapping):
     def __iter__(self):
         """Yield those keys that have a value"""
         if self.gorm.caching:
-            from .window import window_left
             cache = self.gorm._edge_val_cache[self.graph.name][self.nodeA][self.nodeB][self.idx]
-            seen = set()
             for k in cache:
-                if k in seen:
-                    continue
                 for (branch, rev) in self.gorm._active_branches():
                     if branch not in cache[k]:
                         continue
                     try:
-                        result = cache[k][branch][
-                            window_left(cache[k][branch].keys(), rev)
-                        ]
+                        result = cache[k][branch][rev]
                         if result is not None:
                             yield k
-                        seen.add(k)
                         break
-                    except ValueError:
+                    except KeyError:
                         continue
             return
         for k in self.gorm.db.edge_val_keys(
@@ -370,18 +346,14 @@ class Edge(GraphMapping):
 
     def _get(self, key):
         if self.gorm.caching:
-            from .window import window_left
             cache = self.gorm._edge_val_cache[self.graph.name][self.nodeA][self.nodeB][self.idx]
             for (branch, rev) in self.gorm._active_branches():
-                if branch in cache:
-                    try:
-                        result = cache[branch][
-                            window_left(cache[branch].keys(), rev)
-                        ]
-                        if result is None:
-                            raise KeyError("Key is not set now")
-                    except ValueError:
-                        continue
+                if branch not in cache:
+                    continue
+                result = cache[branch][rev]
+                if result is None:
+                    raise KeyError("Key {} is not set now".format(key))
+                return result
             raise KeyError("Key is not set, ever")
         return self.gorm.db.edge_val_get(
             self.graph.name,
@@ -465,19 +437,17 @@ class GraphNodeMapping(GraphMapping):
     def __contains__(self, node):
         """Return whether the node exists presently"""
         if self.gorm.caching:
-            from .window import window_left
             try:
                 cache = self.gorm._nodes_cache[self.graph.name][node]
             except KeyError:
                 return False
             for (branch, rev) in self.gorm._active_branches():
-                if branch in cache:
-                    try:
-                        return cache[branch][
-                            window_left(cache[branch].keys(), rev)
-                        ]
-                    except ValueError:
-                        continue
+                if branch not in cache:
+                    continue
+                try:
+                    return cache[branch][rev]
+                except KeyError:
+                    continue
             return False
         return self.gorm.db.node_exists(
             self.graph.name,
@@ -585,33 +555,34 @@ class GraphEdgeMapping(GraphMapping):
 
     def __iter__(self):
         if self.gorm.caching:
-            from .window import window_left
             cache = self.gorm._edges_cache[self.graph.name]
             seen = set()
             for nodeA in cache:
                 if nodeA in seen:
                     continue
                 for nodeB in cache[nodeA]:
+                    if nodeB in seen:
+                        continue
                     for idx in cache[nodeA][nodeB]:
                         for (branch, rev) in self.gorm._active_branches():
-                            if branch in cache[nodeA][nodeB][idx]:
-                                try:
-                                    if cache[nodeA][nodeB][idx][branch][
-                                        window_left(cache[nodeA][nodeB][idx][branch].keys(), rev)
-                                    ]:
-                                        yield nodeA
-                                        yield nodeB
-                                    seen.add(nodeA)
-                                    seen.add(nodeB)
-                                except ValueError:
-                                    continue
+                            if branch not in cache[nodeA][nodeB][idx]:
+                                continue
+                            try:
+                                if cache[nodeA][nodeB][idx][branch][rev]:
+                                    yield nodeA
+                                    yield nodeB
+                                seen.add(nodeA)
+                                seen.add(nodeB)
+                                break
+                            except KeyError:
+                                continue
             return
-        for edge in self.gorm.db.edges_extant(
+        for nodeA in self.gorm.db.edges_extant(
             self.graph.name,
             self.gorm.branch,
             self.gorm.rev
         ):
-            yield edge
+            yield nodeA
 
 
 class AbstractSuccessors(GraphEdgeMapping):
@@ -625,26 +596,21 @@ class AbstractSuccessors(GraphEdgeMapping):
     def __iter__(self):
         """Iterate over node IDs that have an edge with my nodeA"""
         if self.gorm.caching:
-            from .window import window_left
             cache = self.gorm._edges_cache[self.graph.name][self.nodeA]
-            seen = set()
+            seen = False
             for nodeB in cache:
-                if nodeB in seen:
-                    continue
                 for idx in cache[nodeB]:
-                    if nodeB in seen:
+                    if seen:
+                        seen = False
                         break
                     for (branch, rev) in self.gorm._active_branches():
-                        if branch in cache[nodeB][idx]:
+                        if branch not in cache[nodeB][idx]:
                             try:
-                                if cache[nodeB][idx][branch][
-                                    window_left(cache[nodeB][idx][branch].keys(), rev)
-                                ]:
-                                    if nodeB not in seen:
-                                        yield nodeB
-                                seen.add(nodeB)
+                                if cache[nodeB][idx][branch][rev]:
+                                    yield nodeB
+                                seen = True
                                 break
-                            except ValueError:
+                            except KeyError:
                                 continue
             return
         return self.gorm.db.nodeBs(
@@ -657,26 +623,17 @@ class AbstractSuccessors(GraphEdgeMapping):
     def __contains__(self, nodeB):
         """Is there an edge leading to ``nodeB`` at the moment?"""
         if self.gorm.caching:
-            from .window import window_left
-            try:
-                cache = self.gorm._edges_cache[self.graph.name][self.nodeA][nodeB]
-            except KeyError:
-                return False
-            seen = set()
+            cache = self.gorm._edges_cache[self.graph.name][self.nodeA][nodeB]
             for idx in cache:
-                if idx in seen:
-                    continue
                 for (branch, rev) in self.gorm._active_branches():
-                    if branch in cache[idx]:
-                        try:
-                            if cache[idx][branch][
-                                window_left(cache[idx][branch].keys(), rev)
-                            ]:
-                                return True
-                            seen.add(idx)
-                        except ValueError:
-                            continue
-            return
+                    if branch not in cache[idx]:
+                        continue
+                    try:
+                        if cache[idx][branch][rev]:
+                            return True
+                    except KeyError:
+                        continue
+            return False
         for i in self.gorm.db.multi_edges(
                 self.graph.name,
                 self.nodeA,
@@ -771,25 +728,25 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
     def __iter__(self):
         """Iterate over nodes that have at least one outgoing edge"""
         if self.gorm.caching:
-            from .window import window_left
             cache = self.gorm._edges_cache[self.graph.name]
-            seen = set()
+            seen = False
             for nodeA in cache:
                 for nodeB in cache[nodeA]:
                     for idx in cache[nodeA][nodeB]:
-                        if nodeA in seen:
+                        if seen:
+                            seen = False
                             break
                         for (branch, rev) in self.gorm._active_branches():
-                            if branch in cache[nodeA][nodeB][idx]:
-                                try:
-                                    cache2 = cache[nodeA][nodeB][idx][branch]
-                                    if cache2[window_left(cache2.keys(), rev)]:
-                                        if nodeA not in seen:
-                                            yield nodeA
-                                        seen.add(nodeA)
-                                        break
-                                except ValueError:
-                                    continue
+                            if branch not in cache[nodeA][nodeB][idx]:
+                                continue
+                            try:
+                                cache2 = cache[nodeA][nodeB][idx][branch]
+                                if cache2[rev]:
+                                    yield nodeA
+                                seen = True
+                                break
+                            except KeyError:
+                                continue
             return
         for nodeB in self.gorm.db.edges_extant(
             self.graph.name,
@@ -804,22 +761,16 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
 
         """
         if self.gorm.caching:
-            from .window import window_left
-            try:
-                cache = self.gorm._edges_cache[self.graph.name][nodeA]
-            except KeyError:
-                return False
+            cache = self.gorm._edges_cache[self.graph.name][nodeA]
             for nodeB in cache:
                 for idx in cache[nodeB]:
                     for (branch, rev) in self.gorm._active_branches():
                         if branch not in cache[nodeB][idx]:
                             continue
                         try:
-                            if cache[nodeB][idx][branch][
-                                window_left(cache[nodeB][idx][branch].keys(), rev)
-                            ]:
+                            if cache[nodeB][idx][branch][rev]:
                                 return True
-                        except ValueError:
+                        except KeyError:
                             continue
             return False
         for b in self.gorm.db.nodeBs(
@@ -845,7 +796,6 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
     """
     def __contains__(self, nodeB):
         if self.gorm.caching:
-            from .window import window_left
             cache = self.gorm._edges_cache[self.graph.name]
             for nodeA in cache:
                 if nodeB not in cache[nodeA]:
@@ -855,11 +805,9 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                         if branch not in cache[nodeA][nodeB][idx]:
                             continue
                         try:
-                            if cache[nodeA][nodeB][idx][branch][
-                                window_left(cache[nodeA][nodeB][idx][branch].keys(), rev)
-                            ]:
+                            if cache[nodeA][nodeB][idx][branch][rev]:
                                 return True
-                        except ValueError:
+                        except KeyError:
                             continue
             return False
         for a in self.gorm.db.nodeAs(
@@ -893,22 +841,24 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
     def __iter__(self):
         """Iterate over nodes with at least one edge leading to them"""
         if self.gorm.caching:
-            from .window import window_left
             cache = self.gorm._edges_cache[self.graph.name]
-            seen = set()
+            seen = False
             for nodeA in cache:
                 for nodeB in cache[nodeA]:
                     for idx in cache[nodeA][nodeB]:
+                        if seen:
+                            seen = False
+                            break
                         for (branch, rev) in self.gorm._active_branches():
-                            if branch in cache[nodeA][nodeB]:
-                                try:
-                                    if cache[nodeA][nodeB][idx][branch][
-                                        window_left(cache[nodeA][nodeB][idx][branch].keys(), rev)
-                                    ] and nodeB not in seen:
-                                        yield nodeB
-                                    seen.add(nodeB)
-                                except ValueError:
-                                    continue
+                            if branch not in cache[nodeA][nodeB]:
+                                continue
+                            try:
+                                if cache[nodeA][nodeB][idx][branch][rev]:
+                                    yield nodeB
+                                seen = True
+                                break
+                            except KeyError:
+                                continue
             return
         return self.gorm.db.nodeBs(
             self.graph.name,
@@ -931,24 +881,24 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
 
             """
             if self.gorm.caching:
-                from .window import window_left
                 cache = self.gorm._edges_cache[self.graph.name]
-                seen = set()
+                seen = False
                 for nodeA in cache:
                     if self.nodeB not in cache[nodeA]:
                         continue
                     for idx in cache[nodeA][self.nodeB]:
+                        if seen:
+                            seen = False
+                            break
                         for (branch, rev) in self.gorm._active_branches():
                             if branch not in cache[nodeA][self.nodeB][idx]:
                                 continue
                             try:
-                                if cache[nodeA][self.nodeB][idx][branch][
-                                    window_left(cache[nodeA][self.nodeB][idx][branch].keys(), rev)
-                                ]:
+                                if cache[nodeA][self.nodeB][idx][branch][rev]:
                                     yield nodeA
-                                seen.add(nodeA)
+                                seen = True
                                 break
-                            except ValueError:
+                            except KeyError:
                                 continue
                 return
             return self.gorm.db.nodeAs(
@@ -961,21 +911,15 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
         def __contains__(self, nodeA):
             """Is there an edge from ``nodeA`` at the moment?"""
             if self.gorm.caching:
-                from .window import window_left
-                try:
-                    cache = self.gorm._edges_cache[self.graph.name][nodeA][self.nodeB]
-                except KeyError:
-                    return False
+                cache = self.gorm._edges_cache[self.graph.name][nodeA][self.nodeB]
                 for idx in cache:
                     for (branch, rev) in self.gorm._active_branches():
                         if branch not in cache:
                             continue
                         try:
-                            if cache[branch][
-                                window_left(cache[branch].keys(), rev)
-                            ]:
+                            if cache[branch][rev]:
                                 return True
-                        except ValueError:
+                        except KeyError:
                             continue
                 return False
             for i in self.gorm.db.multi_edges(
@@ -1045,19 +989,17 @@ class MultiEdges(GraphEdgeMapping):
 
     def __iter__(self):
         if self.gorm.caching:
-            from .window import window_left
             cache = self.gorm._edges_cache[self.graph.name][self.nodeA][self.nodeB]
             for idx in cache:
                 for (branch, rev) in self.gorm._active_branches():
-                    if branch in cache[idx]:
-                        try:
-                            if cache[idx][branch][
-                                window_left(cache[idx][branch].keys(), rev)
-                            ]:
-                                yield idx
-                            break
-                        except ValueError:
-                            continue
+                    if branch not in cache[idx]:
+                        continue
+                    try:
+                        if cache[idx][branch][rev]:
+                            yield idx
+                        break
+                    except KeyError:
+                        continue
             return
         return self.gorm.db.multi_edges(
             self.graph.name,
@@ -1076,19 +1018,14 @@ class MultiEdges(GraphEdgeMapping):
 
     def __contains__(self, i):
         if self.gorm.caching:
-            from .window import window_left
-            try:
-                cache = self.gorm._edges_cache[self.graph.name][self.nodeA][self.nodeB][i]
-            except KeyError:
-                return False
+            cache = self.gorm._edges_cache[self.graph.name][self.nodeA][self.nodeB][i]
             for (branch, rev) in self.gorm._active_branches():
-                if branch in cache:
-                    try:
-                        return cache[branch][
-                            window_left(cache[branch].keys(), rev)
-                        ]
-                    except ValueError:
-                        continue
+                if branch not in cache:
+                    continue
+                try:
+                    return cache[branch][rev]
+                except KeyError:
+                    continue
             return False
         return self.gorm.db.edge_exists(
             self.graph.name,
@@ -1220,22 +1157,17 @@ class GormGraph(object):
 
     def nodes(self):
         if self.gorm.caching:
-            from .window import window_left
-            try:
-                cache = self.gorm._nodes_cache[self._name]
-            except KeyError:
-                return
+            cache = self.gorm._nodes_cache[self._name]
             for node in cache:
                 for (branch, rev) in self.gorm._active_branches():
-                    if branch in cache[node]:
-                        try:
-                            if cache[node][branch][
-                                window_left(cache[node][branch].keys(), rev)
-                            ]:
-                                yield node
-                            break
-                        except ValueError:
-                            continue
+                    if branch not in cache[node]:
+                        continue
+                    try:
+                        if cache[node][branch][rev]:
+                            yield node
+                        break
+                    except KeyError:
+                        continue
         else:
             for node in self.gorm.db.nodes_extant(
                 self._name, self.gorm.branch, self.gorm.rev
