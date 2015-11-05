@@ -239,7 +239,7 @@ class Node(GraphMapping):
                 if r is None:
                     raise KeyError("Key {} is not set now".format(key))
                 else:
-                    return key
+                    return r
             raise KeyError("Key {} is never set".format(key))
         return self.gorm.db.node_val_get(
             self.graph.name,
