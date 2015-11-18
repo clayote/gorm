@@ -1,7 +1,7 @@
 from setuptools import setup
 setup(
     name = "gorm",
-    version = "0.7.8",
+    version = "0.7.9",
     packages = ["gorm"],
     install_requires = ['networkx>=1.9'],
     author = "Zachary Spector",

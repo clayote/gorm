@@ -604,7 +604,7 @@ class AbstractSuccessors(GraphEdgeMapping):
                         seen = False
                         break
                     for (branch, rev) in self.gorm._active_branches():
-                        if branch not in cache[nodeB][idx]:
+                        if branch in cache[nodeB][idx]:
                             try:
                                 if cache[nodeB][idx][branch][rev]:
                                     yield nodeB
