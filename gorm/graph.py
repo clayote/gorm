@@ -346,7 +346,7 @@ class Edge(GraphMapping):
 
     def _get(self, key):
         if self.gorm.caching:
-            cache = self.gorm._edge_val_cache[self.graph.name][self.nodeA][self.nodeB][self.idx]
+            cache = self.gorm._edge_val_cache[self.graph.name][self.nodeA][self.nodeB][self.idx][key]
             for (branch, rev) in self.gorm._active_branches():
                 if branch not in cache:
                     continue
