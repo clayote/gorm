@@ -597,11 +597,10 @@ class AbstractSuccessors(GraphEdgeMapping):
         """Iterate over node IDs that have an edge with my nodeA"""
         if self.gorm.caching:
             cache = self.gorm._edges_cache[self.graph.name][self.nodeA]
-            seen = False
             for nodeB in cache:
+                seen = False
                 for idx in cache[nodeB]:
                     if seen:
-                        seen = False
                         break
                     for (branch, rev) in self.gorm._active_branches():
                         if branch in cache[nodeB][idx]:
@@ -729,12 +728,11 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
         """Iterate over nodes that have at least one outgoing edge"""
         if self.gorm.caching:
             cache = self.gorm._edges_cache[self.graph.name]
-            seen = False
             for nodeA in cache:
                 for nodeB in cache[nodeA]:
+                    seen = False
                     for idx in cache[nodeA][nodeB]:
                         if seen:
-                            seen = False
                             break
                         for (branch, rev) in self.gorm._active_branches():
                             if branch not in cache[nodeA][nodeB][idx]:
@@ -842,12 +840,11 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
         """Iterate over nodes with at least one edge leading to them"""
         if self.gorm.caching:
             cache = self.gorm._edges_cache[self.graph.name]
-            seen = False
             for nodeA in cache:
                 for nodeB in cache[nodeA]:
+                    seen = False
                     for idx in cache[nodeA][nodeB]:
                         if seen:
-                            seen = False
                             break
                         for (branch, rev) in self.gorm._active_branches():
                             if branch not in cache[nodeA][nodeB]:
@@ -882,13 +879,12 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
             """
             if self.gorm.caching:
                 cache = self.gorm._edges_cache[self.graph.name]
-                seen = False
                 for nodeA in cache:
                     if self.nodeB not in cache[nodeA]:
                         continue
+                    seen = False
                     for idx in cache[nodeA][self.nodeB]:
                         if seen:
-                            seen = False
                             break
                         for (branch, rev) in self.gorm._active_branches():
                             if branch not in cache[nodeA][self.nodeB][idx]:
