@@ -6,7 +6,11 @@ def window_left(revs, rev):
     k = frozenset(revs)
     if k not in window_left.memo or rev not in window_left.memo[k]:
         revs = array(tuple(k))
-        window_left.memo[k][rev] = revs[less_equal(revs, rev)].max()
+        smalls = revs[less_equal(revs, rev)]
+        if smalls:
+            window_left.memo[k][rev] = smalls.max()
+        else:
+            window_left.memo[k][rev] = None
     return window_left.memo[k][rev]
 window_left.memo = defaultdict(dict)
 
@@ -15,7 +19,11 @@ def window_right(revs, rev):
     k = frozenset(revs)
     if k not in window_right.memo or rev not in window_right.memo[k]:
         revs = array(tuple(k))
-        window_right.memo[k][rev] = revs[greater(revs, rev)].min()
+        bigs = revs[greater(revs, rev)]
+        if bigs:
+            window_right.memo[k][rev] = bigs.min()
+        else:
+            window_right.memo[k][rev] = None
     return window_right.memo[k][rev]
 window_right.memo = defaultdict(dict)
 
