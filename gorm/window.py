@@ -7,7 +7,7 @@ def window_left(revs, rev):
     if k not in window_left.memo or rev not in window_left.memo[k]:
         revs = array(tuple(k))
         smalls = revs[less_equal(revs, rev)]
-        if smalls:
+        if len(smalls):
             window_left.memo[k][rev] = smalls.max()
         else:
             window_left.memo[k][rev] = None
@@ -20,7 +20,7 @@ def window_right(revs, rev):
     if k not in window_right.memo or rev not in window_right.memo[k]:
         revs = array(tuple(k))
         bigs = revs[greater(revs, rev)]
-        if bigs:
+        if len(bigs):
             window_right.memo[k][rev] = bigs.min()
         else:
             window_right.memo[k][rev] = None
