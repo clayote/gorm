@@ -1,16 +1,27 @@
 from collections import defaultdict, MutableMapping
-from numpy import array, less_equal, greater
+try:
+    from numpy import array, less_equal, greater
+    have_numpy = True
+except ImportError:
+    have_numpy = False
 
 
 def window_left(revs, rev):
     k = frozenset(revs)
     if k not in window_left.memo or rev not in window_left.memo[k]:
-        revs = array(tuple(k))
-        smalls = revs[less_equal(revs, rev)]
-        if len(smalls):
-            window_left.memo[k][rev] = smalls.max()
+        if have_numpy:
+            revs = array(tuple(k))
+            smalls = revs[less_equal(revs, rev)]
+            if len(smalls):
+                window_left.memo[k][rev] = smalls.max()
+            else:
+                window_left.memo[k][rev] = None
         else:
-            window_left.memo[k][rev] = None
+            smalls = [rv for rv in revs if rv < rev]
+            if smalls:
+                window_left.memo[k][rev] = max(smalls)
+            else:
+                window_left.memo[k][rev] = None
     return window_left.memo[k][rev]
 window_left.memo = defaultdict(dict)
 
@@ -18,12 +29,19 @@ window_left.memo = defaultdict(dict)
 def window_right(revs, rev):
     k = frozenset(revs)
     if k not in window_right.memo or rev not in window_right.memo[k]:
-        revs = array(tuple(k))
-        bigs = revs[greater(revs, rev)]
-        if len(bigs):
-            window_right.memo[k][rev] = bigs.min()
+        if have_numpy:
+            revs = array(tuple(k))
+            bigs = revs[greater(revs, rev)]
+            if len(bigs):
+                window_right.memo[k][rev] = bigs.min()
+            else:
+                window_right.memo[k][rev] = None
         else:
-            window_right.memo[k][rev] = None
+            bigs = [rv for rv in revs if rv > rev]
+            if bigs:
+                window_right.memo[k][rev] = min(bigs)
+            else:
+                window_right.memo[k][rev] = None
     return window_right.memo[k][rev]
 window_right.memo = defaultdict(dict)
 
