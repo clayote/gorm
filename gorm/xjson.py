@@ -46,8 +46,10 @@ def dec_tuple(o):
 json_dump_hints = {}
 
 
-def json_dump(obj):
+def json_dump(obj,  hint=True):
     """JSON dumper that distinguishes lists from tuples"""
+    if not hint:
+        return dumps(enc_tuple(obj))
     k = str(obj)
     if k not in json_dump_hints:
         json_dump_hints[k] = dumps(enc_tuple(obj))
