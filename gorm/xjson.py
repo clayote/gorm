@@ -59,7 +59,7 @@ def json_dump(obj,  hint=True):
 json_load_hints = {}
 
 
-def json_load(s):
+def json_load(s,  hint=True):
     """JSON loader that distinguishes lists from tuples"""
     if s is None:
         return None
@@ -67,6 +67,8 @@ def json_load(s):
         return []
     if s == '["tuple"]':
         return tuple()
+    if not hint:
+        return dec_tuple(loads(s))
     if s not in json_load_hints:
         json_load_hints[s] = dec_tuple(loads(s))
     return json_load_hints[s]
