@@ -77,7 +77,9 @@ class WindowDict(MutableMapping):
             return latest[1]
 
     def __setitem__(self, rev, v):
-        if rev < self._past[0][0]:
+        if not self._past:
+            self._past.append((rev, v))
+        elif rev < self._past[0][0]:
             self._past.appendleft((rev, v))
         elif rev == self._past[0][0]:
             self._past[0] = (rev, v)
