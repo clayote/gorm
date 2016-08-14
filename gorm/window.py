@@ -51,18 +51,18 @@ class WindowDict(MutableMapping):
             self._past.append(latest)
             return latest[1]
         elif rev > latest[0]:
-            next = self._future.popleft()
-            if rev < next[0]:
-                self._future.appendleft(next)
+            nxt = self._future.popleft()
+            if rev < nxt[0]:
+                self._future.appendleft(nxt)
                 self._past.append(latest)
                 return latest
             future = self._future
-            self._future = deque([next])
-            while rev < next[0]:
-                next = future.popleft()
-                self._future.append(next)
+            self._future = deque([nxt])
+            while rev < nxt[0]:
+                nxt = future.popleft()
+                self._future.append(nxt)
             self._future.extend(future)
-            return next[1]
+            return nxt[1]
         else:  # rev < latest[0]
             past = self._past
             less_past = deque([latest])
