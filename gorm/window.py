@@ -23,9 +23,10 @@ class WindowDict(MutableMapping):
         return self._past[-1][0]
 
     def rev_after(self, rev):
-        """Return the next rev after the given one on which the value will change."""
+        """Return the next rev after the given one on which the value will change, or None if it never will."""
         self.seek(rev)
-        return self._future[0][0]
+        if self._future:
+            return self._future[0][0]
 
     def __init__(self, data={}):
         self._past = deque()
