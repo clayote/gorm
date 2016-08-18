@@ -87,7 +87,7 @@ class WindowDict(MutableMapping):
         elif rev == self._past[-1][0]:
             self._past[-1] = (rev, v)
         elif rev > self._past[-1][0]:
-            if rev < self._future[0][0]:
+            if not self._future or rev < self._future[0][0]:
                 self._past.append((rev, v))
             elif rev == self._future[0][0]:
                 self._future[0][0] = (rev, v)
