@@ -14,7 +14,7 @@ class WindowDict(MutableMapping):
     """
     def seek(self, rev):
         """Arrange the caches in the optimal way for looking up the given revision."""
-        while self._future and self._future[0][0] < rev:
+        while self._future and self._future[0][0] <= rev:
             self._past.append(self._future.popleft())
         while self._past and self._past[-1][0] > rev:
             self._future.appendleft(self._past.pop())
