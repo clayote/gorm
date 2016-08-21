@@ -55,40 +55,10 @@ class WindowDict(MutableMapping):
         return len(self._past) + len(self._future)
 
     def __getitem__(self, rev):
+        self.seek(rev)
         if not self._past:
-            raise KeyError("No history")
-        latest = self._past.pop()
-        if rev == latest[0]:
-            self._past.append(latest)
-            return latest[1]
-        elif rev > latest[0]:
-            if not self._future:
-                self._past.append(latest)
-                return latest[1]
-            nxt = self._future.popleft()
-            if rev < nxt[0]:
-                self._future.appendleft(nxt)
-                self._past.append(latest)
-                return latest
-            future = self._future
-            self._future = deque([nxt])
-            while rev < nxt[0]:
-                nxt = future.popleft()
-                self._future.append(nxt)
-            self._future.extend(future)
-            return nxt[1]
-        else:  # rev < latest[0]
-            past = self._past
-            less_past = deque([latest])
-            while rev < latest[0]:
-                try:
-                    latest = past.pop()
-                except IndexError:
-                    self._past = less_past
-                    raise KeyError("Revision {} is before the start of history".format(rev))
-                less_past.appendleft(latest)
-            self._past = past + less_past
-            return latest[1]
+            raise KeyError("Revision {} is before the start of history".format(rev))
+        return self._past[-1][1]
 
     def __setitem__(self, rev, v):
         if not self._past:
