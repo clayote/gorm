@@ -5,7 +5,9 @@ class WindowDict(MutableMapping):
     """A dict that keeps every value that a variable has had over time.
     
     Look up a revision number in this dict and it will give you the effective value as
-    of that revision. Keys should always be revision numbers.
+    of that revision. Keys should always be revision numbers. Once a key is set, all greater
+    keys are considered to be in this dict unless the value is ``None``. Keys after that one
+    aren't "set" until one's value is non-``None`` again.
     
     Optimized for the cases where you look up the same revision repeatedly, or its neighbors.
     
@@ -42,6 +44,12 @@ class WindowDict(MutableMapping):
             yield rev
         for (rev, v) in self._future:
             yield rev
+
+    def __contains__(self, k):
+        if not self._past or self._past[0][0] > k:
+            return False
+        self.seek(k)
+        return self._past[-1][1] is not None
 
     def __len__(self):
         return len(self._past) + len(self._future)
