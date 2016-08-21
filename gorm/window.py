@@ -54,6 +54,8 @@ class WindowDict(MutableMapping):
         self.seek(rev)
         if not self._past:
             raise KeyError("Revision {} is before the start of history".format(rev))
+        if self._past[-1][1] is None:
+            raise KeyError("No value since revision {}".format(self._past[-1][0]))
         return self._past[-1][1]
 
     def __setitem__(self, rev, v):
