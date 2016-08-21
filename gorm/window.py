@@ -31,13 +31,8 @@ class WindowDict(MutableMapping):
             return self._future[0][0]
 
     def __init__(self, data={}):
-        self._past = deque()
+        self._past = deque(sorted(data.items()))
         self._future = deque()
-        for (rev, v) in sorted(data.items()):
-            if rev <= self._rev:
-                self._past.append((rev, v))
-            else:
-                self._future.append((rev, v))
 
     def __iter__(self):
         for (rev, v) in self._past:
