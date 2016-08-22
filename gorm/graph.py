@@ -688,7 +688,7 @@ class AbstractSuccessors(GraphEdgeMapping):
             False
         )
         if self.gorm.caching:
-            self.gorm._edges_cache[self.graph.name][self.nodeA][nodeB][0] = False
+            self.gorm._edges_cache[self.graph.name][self.nodeA][nodeB][0][self.gorm.branch][self.gorm.rev] = False
 
     def clear(self):
         """Delete every edge with origin at my nodeA"""
