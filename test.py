@@ -14,10 +14,70 @@ class GormTest(unittest.TestCase):
 
     def test_branch_lineage(self):
         """Create some branches of history and check that gorm remembers where
-        each came from.
+        each came from and what happened in each.
 
         """
-        pass
+        g = self.engine.new_graph('branch_lineage')
+        g.add_node('n0')
+        g.add_node('n1')
+        g.add_edge('n0', 'n1')
+        self.engine.rev = 1
+        self.engine.branch = 'no_edge'
+        del g.edge['n0']['n1']
+        self.engine.rev = 0
+        self.engine.branch = 'triangle'
+        self.engine.rev = 1
+        g.add_node('n2')
+        g.add_edge('n0', 'n1')
+        g.add_edge('n1', 'n2')
+        g.add_edge('n2', 'n0')
+        self.engine.branch = 'square'
+        self.engine.rev = 2
+        del g.edge['n2']['n0']
+        g.add_node('n3')
+        g.add_edge('n2', 'n3')
+        g.add_edge('n3', 'n0')
+        self.engine.branch = 'nothing'
+        del g.node['n0']
+        del g.node['n1']
+        self.assertTrue(self.engine.is_parent_of('master', 'no_edge'))
+        self.assertTrue(self.engine.is_parent_of('master', 'triangle'))
+        self.assertTrue(self.engine.is_parent_of('master', 'nothing'))
+        self.engine.branch = 'master'
+        self.assertIn('n0', g.node)
+        self.assertIn('n1', g.node)
+        self.assertIn('n0', g.edge)
+        self.assertIn('n1', g.edge['n0'])
+        self.engine.branch = 'no_edge'
+        self.assertNotIn('n0', g.edge)
+        self.engine.branch = 'triangle'
+        self.assertIn('n2', g.node)
+        def triTest():
+            for orig in ('n0', 'n1', 'n2'):
+                for dest in ('n0', 'n1', 'n2'):
+                    self.assertIn(orig, g.edge)
+                    self.assertIn(dest, g.edge[orig])
+        triTest()
+        self.engine.rev = 1
+        self.engine.branch = 'square'
+        triTest()
+        self.assertNotIn('n3', g.node)
+        self.engine.rev = 2
+        self.assertIn('n3', g.node)
+        self.assertIn('n1', g.edge['n0'])
+        self.assertIn('n2', g.edge['n1'])
+        self.assertIn('n3', g.edge['n2'])
+        self.assertIn('n0', g.edge['n3'])
+        self.engine.branch = 'nothing'
+        for node in ('n0', 'n1', 'n2'):
+            self.assertNotIn(node, g.node)
+            self.assertNotIn(node, g.edge)
+        self.engine.rev = 0
+        self.assertEqual(self.engine.branch, 'master')
+        self.assertIn('n0', g.node)
+        self.assertIn('n1', g.node)
+        self.assertIn('n0', g.edge)
+        self.assertIn('n1', g.edge['n0'])
 
     def test_global_storage(self):
         """Test that we can store arbitrary key-value pairs in the ``global``
