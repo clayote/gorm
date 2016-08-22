@@ -242,7 +242,7 @@ class ORM(object):
                 )
             )
         self.db.globl['branch'] = v
-        if self.engine.caching:
+        if self.caching:
             self._obranch = v
 
     @property
