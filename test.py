@@ -134,7 +134,8 @@ class GormTest(unittest.TestCase):
 
         """
         for g in graph_atlas_g():
-            print(g.name)
+            if int(g.name[1:]) % 100 == 0:
+                print(g.name)
             gormg = self.engine.new_graph(g.name, g)
             for n in g.node:
                 self.assertIn(n, gormg.node)
