@@ -72,8 +72,8 @@ class GormTest(unittest.TestCase):
         for node in ('n0', 'n1', 'n2'):
             self.assertNotIn(node, g.node)
             self.assertNotIn(node, g.edge)
+        self.engine.branch = 'master'
         self.engine.rev = 0
-        self.assertEqual(self.engine.branch, 'master')
         self.assertIn('n0', g.node)
         self.assertIn('n1', g.node)
         self.assertIn('n0', g.edge)
