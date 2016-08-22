@@ -131,6 +131,12 @@ class ORM(object):
         self._obranch = None
         self._orev = None
         self.db.initdb()
+        # I will be recursing a lot so just cache all the branch info
+        self._childbranch = {}
+        self._ancestry = {}
+        for (branch, parent, parent_rev) in self.db.all_branches():
+            self._branches[branch] = (parent, parent_rev)
+            self._childbranch[parent] = branch
         if caching:
             self.caching = True
             self._obranch = self.branch
@@ -179,12 +185,6 @@ class ORM(object):
             return True
         elif child == parent:
             return False
-        # I will be recursing a lot so just cache all the branch info
-        self._childbranch = {}
-        self._ancestry = {}
-        for (branch, parent, parent_rev) in self.db.all_branches():
-            self._branches[branch] = (parent, parent_rev)
-            self._childbranch[parent] = branch
 
         self._ancestry[child] = set([parent])
         lineage = self._ancestry[child]
