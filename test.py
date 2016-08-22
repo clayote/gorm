@@ -79,13 +79,6 @@ class GormTest(unittest.TestCase):
         self.assertIn('n0', g.edge)
         self.assertIn('n1', g.edge['n0'])
 
-    def test_global_storage(self):
-        """Test that we can store arbitrary key-value pairs in the ``global``
-        mapping.
-
-        """
-        pass
-
     def test_graph_storage(self):
         """Test that all the graph types can store and retrieve key-value pairs
         for the graph as a whole.
