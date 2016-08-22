@@ -274,7 +274,6 @@ class ORM(object):
                     "the branch {brnch}".format(revn=v, brnch=branch)
                 )
         self.db.globl['rev'] = v
-        assert(self.rev == v)
         if self.caching:
             self._orev = v
 
