@@ -51,16 +51,24 @@ class GormTest(unittest.TestCase):
         self.assertTrue(self.engine.is_parent_of('master', 'no_edge'))
         self.assertTrue(self.engine.is_parent_of('master', 'triangle'))
         self.assertTrue(self.engine.is_parent_of('master', 'nothing'))
+        self.assertTrue(self.engine.is_parent_of('no_edge', 'triangle'))
+        self.assertTrue(self.engine.is_parent_of('square', 'nothing'))
+        self.assertFalse(self.engine.is_parent_of('nothing', 'master'))
+        self.assertFalse(self.engine.is_parent_of('triangle', 'no_edge'))
         self.engine.branch = 'master'
         self.assertIn('n0', g.node)
         self.assertIn('n1', g.node)
         self.assertIn('n0', g.edge)
         self.assertIn('n1', g.edge['n0'])
+        self.engine.rev = 0
+
+        def badjump():
+            self.engine.branch = 'no_edge'
+        self.assertRaises(ValueError, badjump)
+        self.engine.rev = 2
         self.engine.branch = 'no_edge'
-        self.assertEqual(self.engine.rev, 1)  # start of branch
         self.assertNotIn('n0', g.edge)
         self.engine.branch = 'triangle'
-        self.assertEqual(self.engine.rev, 1)  # start of branch
         self.assertIn('n2', g.node)
         def triTest():
             for orig in ('n0', 'n1', 'n2'):
