@@ -1,13 +1,23 @@
 import unittest
+from copy import deepcopy
 import gorm
 import networkx as nx
 from networkx.generators.atlas import graph_atlas_g
+
+
+testkvs = [0, 1, 10, 10**10, 10**10**4, 'spam', 'eggs', 'ham',  '💧', '🔑', '𐦖',('spam', 'eggs', 'ham'), ['spam', 'eggs', 'ham']]
+testdata = []
+for k in testkvs:
+    for v in testkvs:
+        testdata.append((k, v))
+testdata.append(('lol', deepcopy(testdata)))
 
 
 class GormTest(unittest.TestCase):
     def setUp(self):
         self.engine = gorm.ORM('sqlite:///:memory:')
         self.engine.initdb()
+        self.graphmakers = (self.engine.new_graph, self.engine.new_digraph, self.engine.new_multigraph, self.engine.new_multidigraph)
 
     def tearDown(self):
         self.engine.close()
@@ -83,7 +93,13 @@ class GormTest(unittest.TestCase):
         for the graph as a whole.
 
         """
-        pass
+        for graphmaker in self.graphmakers:
+            g = graphmaker('testgraph')
+            for (k, v) in testdata:
+                g.graph[k] = v
+                self.assertIn(k, g.graph)
+                self.assertEqual(g.graph[k], v)
+            self.engine.del_graph('testgraph')
 
     def test_node_storage(self):
         """Test that all the graph types can store and retrieve key-value
