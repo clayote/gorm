@@ -127,24 +127,19 @@ class ORM(object):
 
         """
         self.db = query_engine_class(dbstring, connect_args, alchemy, json_dump, json_load)
-        self._branches = {}
         self._obranch = None
         self._orev = None
         self.db.initdb()
         # I will be recursing a lot so just cache all the branch info
-        self._childbranch = {}
-        self._ancestry = {}
+        self._childbranch = defaultdict(set)
+        self._parentbranch_rev = {}
         for (branch, parent, parent_rev) in self.db.all_branches():
-            self._branches[branch] = (parent, parent_rev)
-            self._childbranch[parent] = branch
+            self._parentbranch_rev[branch] = (parent, parent_rev)
+            self._childbranch[parent].add(branch)
         if caching:
             self.caching = True
             self._obranch = self.branch
             self._orev = self.rev
-            self._timestream = {'master': {}}
-            self._branch_start = {}
-            self._branches = {'master': self._timestream['master']}
-            self._branch_parents = {}
             self._active_branches_cache = []
             self.db.active_branches = self._active_branches
             todo = deque(self.db.timestream_data())
@@ -153,11 +148,8 @@ class ORM(object):
                 if branch == 'master':
                     continue
                 if parent in self._branches:
-                    assert(branch not in self._branches)
-                    self._branches[parent][branch] = {}
-                    self._branches[branch] = self._branches[parent][branch]
-                    self._branch_parents['branch'] = parent
-                    self._branch_start[branch] = parent_tick
+                    self._parentbranch_rev[branch] = (parent, parent_tick)
+                    self._childbranch[parent].add(branch)
                 else:
                     todo.append(working)
 
@@ -171,7 +163,7 @@ class ORM(object):
 
     def _havebranch(self, b):
         """Private use. Checks that the branch is known about."""
-        if self.caching and b in self._branches:
+        if self.caching and b in self._parentbranch_rev:
             return True
         return self.db.have_branch(b)
 
@@ -180,25 +172,15 @@ class ORM(object):
         any remove.
 
         """
-        # trivial cases
-        if child in self._branches and self._branches[child][0] == parent:
+        if parent == 'master':
             return True
-        elif child == parent:
+        if child == 'master':
             return False
-
-        self._ancestry[child] = set([parent])
-        lineage = self._ancestry[child]
-
-        def recurse(oneparent):
-            if oneparent in lineage:
-                return True
-            if oneparent not in self._branches:
-                return False
-            if self._branches[oneparent][0] in lineage:
-                return True
-            lineage.add(oneparent)
-            return recurse(self._branches[oneparent][0])
-        return recurse(child)
+        if child not in self._parentbranch_rev:
+            raise ValueError("The branch {} seems not to have ever been created".format(child))
+        if self._parentbranch_rev[child][0] == parent:
+            return True
+        return self.is_parent_of(parent, self._parentbranch_rev[child][0])
 
     @property
     def branch(self):
@@ -222,15 +204,12 @@ class ORM(object):
             # assumes the present revision in the parent branch has
             # been finalized.
             self.db.new_branch(v, curbranch, currev)
-        if v == 'master':
-            return
         # make sure I'll end up within the revision range of the
         # destination branch
         if self.caching:
-            if v not in self._branch_parents:
-                self._branch_parents[v] = curbranch
-                self._branch_start[v] = currev
-            parrev = self._branch_start[v]
+            if v not in self._parentbranch_rev:
+                self._parentbranch_rev[v] = (curbranch, currev)
+            parrev = self._parentbranch_rev[v][1]
         else:
             parrev = self.db.parrev(v)
         if currev < parrev:
@@ -263,8 +242,7 @@ class ORM(object):
         branch = self.branch
         if branch != 'master':
             if self.caching:
-                parent = self._branch_parents[branch]
-                parent_rev = self._branch_start[branch]
+                (parent, parent_rev) = self._parentbranch_rev[branch]
             else:
                 (parent, parent_rev) = self.db.parparrev(branch)
             if v < int(parent_rev):
@@ -360,9 +338,8 @@ class ORM(object):
         r = rev or self.rev
         if self.caching:
             yield b, r
-            while b in self._branch_parents:
-                r = self._branch_start[b]
-                b = self._branch_parents[b]
+            while b in self._parentbranch_rev:
+                (b, r) = self._parentbranch_rev[b]
                 yield b, r
             return
 
