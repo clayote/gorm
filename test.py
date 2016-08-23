@@ -24,9 +24,7 @@ class GormTest(unittest.TestCase):
         self.engine.rev = 1
         self.engine.branch = 'no_edge'
         del g.edge['n0']['n1']
-        self.engine.rev = 0
         self.engine.branch = 'triangle'
-        self.engine.rev = 1
         g.add_node('n2')
         g.add_edge('n0', 'n1')
         g.add_edge('n1', 'n2')
@@ -49,8 +47,10 @@ class GormTest(unittest.TestCase):
         self.assertIn('n0', g.edge)
         self.assertIn('n1', g.edge['n0'])
         self.engine.branch = 'no_edge'
+        self.assertEqual(self.engine.rev, 1)  # start of branch
         self.assertNotIn('n0', g.edge)
         self.engine.branch = 'triangle'
+        self.assertEqual(self.engine.rev, 1)  # start of branch
         self.assertIn('n2', g.node)
         def triTest():
             for orig in ('n0', 'n1', 'n2'):
@@ -58,7 +58,6 @@ class GormTest(unittest.TestCase):
                     self.assertIn(orig, g.edge)
                     self.assertIn(dest, g.edge[orig])
         triTest()
-        self.engine.rev = 1
         self.engine.branch = 'square'
         triTest()
         self.assertNotIn('n3', g.node)
