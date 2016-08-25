@@ -628,8 +628,7 @@ class AbstractSuccessors(GraphEdgeMapping):
                     if branch not in cache[idx]:
                         continue
                     try:
-                        if cache[idx][branch][rev]:
-                            return True
+                        return cache[idx][branch][rev]
                     except KeyError:
                         continue
             return False
@@ -766,8 +765,7 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
                         if branch not in cache[nodeB][idx]:
                             continue
                         try:
-                            if cache[nodeB][idx][branch][rev]:
-                                return True
+                            return cache[nodeB][idx][branch][rev]
                         except KeyError:
                             continue
             return False
