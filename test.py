@@ -33,7 +33,7 @@ class GormTest(unittest.TestCase):
         g.add_edge('n0', 'n1')
         self.engine.rev = 1
         self.engine.branch = 'no_edge'
-        del g.edge['n0']['n1']
+        g.remove_edge('n0', 'n1')
         self.engine.branch = 'triangle'
         g.add_node('n2')
         g.add_edge('n0', 'n1')
@@ -41,7 +41,7 @@ class GormTest(unittest.TestCase):
         g.add_edge('n2', 'n0')
         self.engine.branch = 'square'
         self.engine.rev = 2
-        del g.edge['n2']['n0']
+        g.remove_edge('n2', 'n0')
         g.add_node('n3')
         g.add_edge('n2', 'n3')
         g.add_edge('n3', 'n0')
