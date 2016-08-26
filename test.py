@@ -71,16 +71,13 @@ class GormTest(unittest.TestCase):
         self.assertNotIn(0, g.edge)
         self.engine.branch = 'triangle'
         self.assertIn(2, g.node)
-        def triTest():
-            for orig in (0, 1, 2):
-                for dest in (0, 1, 2):
-                    if orig == dest:
-                        continue
-                    self.assertIn(orig, g.edge)
-                    self.assertIn(dest, g.edge[orig])
-        triTest()
+        for orig in (0, 1, 2):
+            for dest in (0, 1, 2):
+                if orig == dest:
+                    continue
+                self.assertIn(orig, g.edge)
+                self.assertIn(dest, g.edge[orig])
         self.engine.branch = 'square'
-        triTest()
         self.assertNotIn(3, g.node)
         self.engine.rev = 2
         self.assertIn(3, g.node)
