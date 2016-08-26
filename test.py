@@ -73,6 +73,8 @@ class GormTest(unittest.TestCase):
         def triTest():
             for orig in ('n0', 'n1', 'n2'):
                 for dest in ('n0', 'n1', 'n2'):
+                    if orig == dest:
+                        continue
                     self.assertIn(orig, g.edge)
                     self.assertIn(dest, g.edge[orig])
         triTest()
