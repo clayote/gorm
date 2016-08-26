@@ -28,26 +28,27 @@ class GormTest(unittest.TestCase):
 
         """
         g = self.engine.new_graph('branch_lineage')
-        g.add_node('n0')
-        g.add_node('n1')
-        g.add_edge('n0', 'n1')
+        g.add_node(0)
+        g.add_node(1)
+        g.add_edge(0, 1)
         self.engine.rev = 1
         self.engine.branch = 'no_edge'
-        g.remove_edge('n0', 'n1')
+        g.remove_edge(0, 1)
+        self.assertNotIn(0, g.edge)
         self.engine.branch = 'triangle'
-        g.add_node('n2')
-        g.add_edge('n0', 'n1')
-        g.add_edge('n1', 'n2')
-        g.add_edge('n2', 'n0')
+        g.add_node(2)
+        g.add_edge(0, 1)
+        g.add_edge(1, 2)
+        g.add_edge(2, 0)
         self.engine.branch = 'square'
         self.engine.rev = 2
-        g.remove_edge('n2', 'n0')
-        g.add_node('n3')
-        g.add_edge('n2', 'n3')
-        g.add_edge('n3', 'n0')
+        g.remove_edge(2, 0)
+        g.add_node(3)
+        g.add_edge(2, 3)
+        g.add_edge(3, 0)
         self.engine.branch = 'nothing'
-        del g.node['n0']
-        del g.node['n1']
+        del g.node[0]
+        del g.node[1]
         self.assertTrue(self.engine.is_parent_of('master', 'no_edge'))
         self.assertTrue(self.engine.is_parent_of('master', 'triangle'))
         self.assertTrue(self.engine.is_parent_of('master', 'nothing'))
@@ -56,10 +57,10 @@ class GormTest(unittest.TestCase):
         self.assertFalse(self.engine.is_parent_of('nothing', 'master'))
         self.assertFalse(self.engine.is_parent_of('triangle', 'no_edge'))
         self.engine.branch = 'master'
-        self.assertIn('n0', g.node)
-        self.assertIn('n1', g.node)
-        self.assertIn('n0', g.edge)
-        self.assertIn('n1', g.edge['n0'])
+        self.assertIn(0, g.node)
+        self.assertIn(1, g.node)
+        self.assertIn(0, g.edge)
+        self.assertIn(1, g.edge[0])
         self.engine.rev = 0
 
         def badjump():
@@ -67,12 +68,12 @@ class GormTest(unittest.TestCase):
         self.assertRaises(ValueError, badjump)
         self.engine.rev = 2
         self.engine.branch = 'no_edge'
-        self.assertNotIn('n0', g.edge)
+        self.assertNotIn(0, g.edge)
         self.engine.branch = 'triangle'
-        self.assertIn('n2', g.node)
+        self.assertIn(2, g.node)
         def triTest():
-            for orig in ('n0', 'n1', 'n2'):
-                for dest in ('n0', 'n1', 'n2'):
+            for orig in (0, 1, 2):
+                for dest in (0, 1, 2):
                     if orig == dest:
                         continue
                     self.assertIn(orig, g.edge)
@@ -80,23 +81,23 @@ class GormTest(unittest.TestCase):
         triTest()
         self.engine.branch = 'square'
         triTest()
-        self.assertNotIn('n3', g.node)
+        self.assertNotIn(3, g.node)
         self.engine.rev = 2
-        self.assertIn('n3', g.node)
-        self.assertIn('n1', g.edge['n0'])
-        self.assertIn('n2', g.edge['n1'])
-        self.assertIn('n3', g.edge['n2'])
-        self.assertIn('n0', g.edge['n3'])
+        self.assertIn(3, g.node)
+        self.assertIn(1, g.edge[0])
+        self.assertIn(2, g.edge[1])
+        self.assertIn(3, g.edge[2])
+        self.assertIn(0, g.edge[3])
         self.engine.branch = 'nothing'
-        for node in ('n0', 'n1', 'n2'):
+        for node in (0, 1, 2):
             self.assertNotIn(node, g.node)
             self.assertNotIn(node, g.edge)
         self.engine.branch = 'master'
         self.engine.rev = 0
-        self.assertIn('n0', g.node)
-        self.assertIn('n1', g.node)
-        self.assertIn('n0', g.edge)
-        self.assertIn('n1', g.edge['n0'])
+        self.assertIn(0, g.node)
+        self.assertIn(1, g.node)
+        self.assertIn(0, g.edge)
+        self.assertIn(1, g.edge[0])
 
     def test_graph_storage(self):
         """Test that all the graph types can store and retrieve key-value pairs
