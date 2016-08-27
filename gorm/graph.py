@@ -54,7 +54,7 @@ class GraphMapping(MutableMapping):
                 if branch not in cache:
                     continue
                 try:
-                    return cache[branch][rev]
+                    return cache[branch][rev] is not None
                 except KeyError:
                     continue
             return False
