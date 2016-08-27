@@ -214,7 +214,7 @@ class ORM(object):
             self.db.new_branch(v, curbranch, currev)
         # make sure I'll end up within the revision range of the
         # destination branch
-        if self.caching:
+        if self.caching and v != 'master':
             if v not in self._parentbranch_rev:
                 self._parentbranch_rev[v] = (curbranch, currev)
             parrev = self._parentbranch_rev[v][1]
