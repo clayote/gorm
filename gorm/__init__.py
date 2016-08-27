@@ -214,20 +214,21 @@ class ORM(object):
             self.db.new_branch(v, curbranch, currev)
         # make sure I'll end up within the revision range of the
         # destination branch
-        if self.caching and v != 'master':
-            if v not in self._parentbranch_rev:
-                self._parentbranch_rev[v] = (curbranch, currev)
-            parrev = self._parentbranch_rev[v][1]
-        else:
-            parrev = self.db.parrev(v)
-        if currev < parrev:
-            raise ValueError(
-                "Tried to jump to branch {br}, which starts at revision {rv}. "
-                "Go to rev {rv} or later to use this branch.".format(
-                    br=v,
-                    rv=currev
+        if v != 'master':
+            if self.caching:
+                if v not in self._parentbranch_rev:
+                    self._parentbranch_rev[v] = (curbranch, currev)
+                parrev = self._parentbranch_rev[v][1]
+            else:
+                parrev = self.db.parrev(v)
+            if currev < parrev:
+                raise ValueError(
+                    "Tried to jump to branch {br}, which starts at revision {rv}. "
+                    "Go to rev {rv} or later to use this branch.".format(
+                        br=v,
+                        rv=currev
+                    )
                 )
-            )
         self.db.globl['branch'] = v
         if self.caching:
             self._obranch = v
