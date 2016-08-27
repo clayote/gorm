@@ -383,11 +383,9 @@ class ORM(object):
             for desc in self.db.branch_descendants(branch):
                 yield desc
             return
-        for b in self._branches[branch].keys():
-            yield b
-        for child in self._branches[branch].keys():
-            for b in self._branch_descendants(child):
-                yield b
+        for (parent, (child, rev)) in self._parentbranch_rev.items():
+            if parent == branch:
+                yield child
 
 
 __all__ = [ORM, 'alchemy', 'graph', 'query', 'reify', 'window', 'xjson']
