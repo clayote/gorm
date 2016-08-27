@@ -705,10 +705,9 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
                 return (self.nodeA, nodeB)
 
     def __getitem__(self, nodeA):
-        """If the node exists, return a Successors instance for it"""
-        if nodeA in self.graph.node:
-            return self.Successors(self, nodeA)
-        raise KeyError("No such node")
+        if nodeA not in self:
+            raise KeyError("No edges from {}".format(nodeA))
+        return self.Successors(self, nodeA)
 
     def __setitem__(self, nodeA, val):
         """Wipe out any edges presently emanating from nodeA and replace them
@@ -724,59 +723,10 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
         self.Successors(self, nodeA).clear()
 
     def __iter__(self):
-        """Iterate over nodes that have at least one outgoing edge"""
-        if self.gorm.caching:
-            cache = self.gorm._edges_cache[self.graph.name]
-            for nodeA in cache:
-                for nodeB in cache[nodeA]:
-                    seen = False
-                    for idx in cache[nodeA][nodeB]:
-                        if seen:
-                            break
-                        for (branch, rev) in self.gorm._active_branches():
-                            if branch not in cache[nodeA][nodeB][idx]:
-                                continue
-                            try:
-                                cache2 = cache[nodeA][nodeB][idx][branch]
-                                if cache2[rev]:
-                                    yield nodeA
-                                seen = True
-                                break
-                            except KeyError:
-                                continue
-            return
-        for nodeB in self.gorm.db.edges_extant(
-            self.graph.name,
-            self.gorm.branch,
-            self.gorm.rev
-        ):
-            yield nodeB
+        return iter(self.graph.node)
 
     def __contains__(self, nodeA):
-        """Does this node exist, and does it have at least one outgoing
-        edge?
-
-        """
-        if self.gorm.caching:
-            cache = self.gorm._edges_cache[self.graph.name][nodeA]
-            for nodeB in cache:
-                for idx in cache[nodeB]:
-                    for (branch, rev) in self.gorm._active_branches():
-                        if branch not in cache[nodeB][idx]:
-                            continue
-                        try:
-                            return cache[nodeB][idx][branch][rev]
-                        except KeyError:
-                            continue
-            return False
-        for b in self.gorm.db.nodeBs(
-                self.graph.name,
-                nodeA,
-                self.gorm.branch,
-                self.gorm.rev
-        ):
-            return True
-        return False
+        return nodeA in self.graph.node
 
 
 class DiGraphSuccessorsMapping(GraphSuccessorsMapping):
