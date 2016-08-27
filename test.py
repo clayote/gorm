@@ -120,6 +120,8 @@ class StorageTest(GormTest):
             g.add_edge(0, 1)
             n = g.node[0]
             e = g.edge[0][1]
+            if isinstance(e, gorm.graph.MultiEdges):
+                e = e[0]
             for (k, v) in testdata:
                 g.graph[k] = v
                 self.assertIn(k, g.graph)
