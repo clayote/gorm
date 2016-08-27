@@ -886,7 +886,8 @@ class MultiEdges(GraphEdgeMapping):
             self.nodeB,
             idx,
             self.gorm.branch,
-            self.gorm.rev
+            self.gorm.rev,
+            True
         )
         e = Edge(self.graph, self.nodeA, self.nodeB, idx)
         e.clear()
