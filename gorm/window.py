@@ -41,12 +41,6 @@ class WindowDict(MutableMapping):
         for (rev, v) in self._future:
             yield rev
 
-    def __contains__(self, k):
-        if not self._past or self._past[0][0] > k:
-            return False
-        self.seek(k)
-        return self._past[-1][1] is not None
-
     def __len__(self):
         return len(self._past) + len(self._future)
 
