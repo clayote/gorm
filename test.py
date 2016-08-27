@@ -22,19 +22,17 @@ class GormTest(unittest.TestCase):
     def tearDown(self):
         self.engine.close()
 
-    def test_branch_lineage(self):
-        """Create some branches of history and check that gorm remembers where
-        each came from and what happened in each.
 
-        """
-        g = self.engine.new_graph('branch_lineage')
+class GraphTest(GormTest):
+    def setUp(self):
+        super().setUp()
+        g = self.engine.new_graph('test')
         g.add_node(0)
         g.add_node(1)
         g.add_edge(0, 1)
         self.engine.rev = 1
         self.engine.branch = 'no_edge'
         g.remove_edge(0, 1)
-        self.assertNotIn(0, g.edge)
         self.engine.branch = 'triangle'
         g.add_node(2)
         g.add_edge(0, 1)
@@ -49,6 +47,16 @@ class GormTest(unittest.TestCase):
         self.engine.branch = 'nothing'
         del g.node[0]
         del g.node[1]
+        self.engine.branch = 'master'
+        self.engine.rev = 0
+
+
+class BranchLineageTest(GraphTest):
+    def runTest(self):
+        """Create some branches of history and check that gorm remembers where
+        each came from and what happened in each.
+
+        """
         self.assertTrue(self.engine.is_parent_of('master', 'no_edge'))
         self.assertTrue(self.engine.is_parent_of('master', 'triangle'))
         self.assertTrue(self.engine.is_parent_of('master', 'nothing'))
@@ -56,7 +64,7 @@ class GormTest(unittest.TestCase):
         self.assertTrue(self.engine.is_parent_of('square', 'nothing'))
         self.assertFalse(self.engine.is_parent_of('nothing', 'master'))
         self.assertFalse(self.engine.is_parent_of('triangle', 'no_edge'))
-        self.engine.branch = 'master'
+        g = self.engine.graph['test']
         self.assertIn(0, g.node)
         self.assertIn(1, g.node)
         self.assertIn(0, g.edge)
@@ -96,32 +104,41 @@ class GormTest(unittest.TestCase):
         self.assertIn(0, g.edge)
         self.assertIn(1, g.edge[0])
 
-    def test_graph_storage(self):
+
+class StorageTest(GormTest):
+    def runTest(self):
         """Test that all the graph types can store and retrieve key-value pairs
-        for the graph as a whole.
+        for the graph as a whole, for nodes, and for edges.
 
         """
         for graphmaker in self.graphmakers:
             g = graphmaker('testgraph')
+            g.add_node(0)
+            g.add_node(1)
+            g.add_edge(0, 1)
+            n = g.node[0]
+            e = g.edge[0][1]
             for (k, v) in testdata:
                 g.graph[k] = v
                 self.assertIn(k, g.graph)
                 self.assertEqual(g.graph[k], v)
+                del g.graph[k]
+                self.assertNotIn(k, g.graph)
+                n[k] = v
+                self.assertIn(k, n)
+                self.assertEqual(n[k], v)
+                del n[k]
+                self.assertNotIn(k, n)
+                e[k] = v
+                self.assertIn(k, e)
+                self.assertEqual(e[k], v)
+                del e[k]
+                self.assertNotIn(k, e)
             self.engine.del_graph('testgraph')
 
-    def test_node_storage(self):
-        """Test that all the graph types can store and retrieve key-value
-        pairs for particular nodes."""
-        pass
 
-    def test_edge_storage(self):
-        """Test that all the graph types can store and retrieve key-value
-        pairs for particular edges.
-
-        """
-        pass
-
-    def test_compiled_queries(self):
+class CompiledQueriesTest(GormTest):
+    def runTest(self):
         """Make sure that the queries generated in SQLAlchemy are the same as
         those precompiled into SQLite.
 
