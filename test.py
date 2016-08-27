@@ -45,8 +45,7 @@ class GraphTest(GormTest):
         g.add_edge(2, 3)
         g.add_edge(3, 0)
         self.engine.branch = 'nothing'
-        del g.node[0]
-        del g.node[1]
+        g.remove_nodes_from((0, 1, 2, 3))
         self.engine.branch = 'master'
         self.engine.rev = 0
 
