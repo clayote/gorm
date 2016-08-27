@@ -535,6 +535,9 @@ class GraphEdgeMapping(GraphMapping):
         self.graph = graph
         self.gorm = graph.gorm
 
+    def __repr__(self):
+        return "{}(graph {}, data {})".format(self.__class__.__name__, self.graph.name, repr(dict(self)))
+
     def __eq__(self, other):
         """Compare dictified versions of the edge mappings within me.
 

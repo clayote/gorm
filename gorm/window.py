@@ -103,3 +103,6 @@ class WindowDict(MutableMapping):
                 deleted = True
         if not deleted:
             raise KeyError("Rev not present: {}".format(rev))
+
+    def __repr__(self):
+        return "WindowDict({})".format(repr(dict(self)))
