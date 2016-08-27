@@ -467,6 +467,10 @@ def queries_for_table_dict(table):
                 table['nodes'].c.rev == bindparam('rev')
             )
         ),
+        'graphs_types': select([
+            table['graphs'].c.graph,
+            table['graphs'].c.type
+        ]),
         'nodes_dump': select([
             table['nodes'].c.graph,
             table['nodes'].c.node,

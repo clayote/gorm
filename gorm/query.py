@@ -303,6 +303,10 @@ class QueryEngine(object):
         except IntegrityError:
             self.sql('graph_val_upd', None, graph, key, branch, rev)
 
+    def graphs_types(self):
+        for (graph, typ) in self.sql('graphs_types'):
+            yield (self.json_load(graph), typ)
+
     def nodes_extant(self, graph, branch, rev):
         """Return an iterable of nodes that exist in this graph at this
         revision.
