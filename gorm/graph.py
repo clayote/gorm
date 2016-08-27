@@ -1173,10 +1173,6 @@ class MultiGraph(GormGraph, networkx.MultiGraph):
 
     """
     def __init__(self, gorm, name, data=None, **attr):
-        """Call ``_init_atts``, instantiate special mappings, convert ``data``
-        argument, and then update graph attributes from kwargs.
-
-        """
         self.gorm = gorm
         self._name = name
         if data is not None:
@@ -1198,10 +1194,6 @@ class MultiDiGraph(GormGraph, networkx.MultiDiGraph):
 
     """
     def __init__(self, gorm, name, data=None, **attr):
-        """Call ``_init_atts``, instantiate special mappings, convert ``data``
-        argument, and then update graph attributes from kwargs.
-
-        """
         self.gorm = gorm
         self._name = name
         if data is not None:
