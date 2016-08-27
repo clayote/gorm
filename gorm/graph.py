@@ -141,6 +141,8 @@ class GraphMapping(MutableMapping):
 
     def __setitem__(self, key, value):
         """Set key=value at the present branch and revision"""
+        if value is None:
+            raise ValueError("gorm uses None to indicate that a key's been deleted")
         branch = self.gorm.branch
         rev = self.gorm.rev
         self.gorm.db.graph_val_set(
