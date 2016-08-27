@@ -1055,10 +1055,7 @@ class Graph(GormGraph, networkx.Graph):
     @reify
     def adj(self):
         return GraphSuccessorsMapping(self)
-
-    @property
-    def edge(self):
-        return self.adj
+    edge = adj
 
 
 class DiGraph(GormGraph, networkx.DiGraph):
@@ -1076,10 +1073,7 @@ class DiGraph(GormGraph, networkx.DiGraph):
     @reify
     def adj(self):
         return DiGraphSuccessorsMapping(self)
-
-    @property
-    def succ(self):
-        return self.adj
+    edge = succ = adj
 
     @reify
     def pred(self):
@@ -1182,10 +1176,7 @@ class MultiGraph(GormGraph, networkx.MultiGraph):
     @reify
     def adj(self):
         return MultiGraphSuccessorsMapping(self)
-
-    @property
-    def edge(self):
-        return self.adj
+    edge = adj
 
 
 class MultiDiGraph(GormGraph, networkx.MultiDiGraph):
@@ -1203,10 +1194,7 @@ class MultiDiGraph(GormGraph, networkx.MultiDiGraph):
     @reify
     def adj(self):
         return MultiGraphSuccessorsMapping(self)
-
-    @property
-    def succ(self):
-        return self.adj
+    edge = succ = adj
 
     @reify
     def pred(self):
