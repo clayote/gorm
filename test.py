@@ -5,10 +5,13 @@ import networkx as nx
 from networkx.generators.atlas import graph_atlas_g
 
 
-testkvs = [0, 1, 10, 10**10, 10**10**4, 'spam', 'eggs', 'ham',  '💧', '🔑', '𐦖',('spam', 'eggs', 'ham'), ['spam', 'eggs', 'ham']]
+testkvs = [0, 1, 10, 10**10, 10**10**4, 'spam', 'eggs', 'ham',  '💧', '🔑', '𐦖',('spam', 'eggs', 'ham')]
+testvs = [['spam', 'eggs', 'ham'], {'foo': 'bar', 0: 1, '💧': '🔑'}]
 testdata = []
 for k in testkvs:
     for v in testkvs:
+        testdata.append((k, v))
+    for v in testvs:
         testdata.append((k, v))
 testdata.append(('lol', deepcopy(testdata)))
 
