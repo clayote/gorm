@@ -75,7 +75,7 @@ class BranchLineageTest(GraphTest):
         self.assertRaises(ValueError, badjump)
         self.engine.rev = 2
         self.engine.branch = 'no_edge'
-        self.assertNotIn(0, g.edge)
+        self.assertNotIn(1, g.edge[0])
         self.engine.branch = 'triangle'
         self.assertIn(2, g.node)
         for orig in (0, 1, 2):
@@ -85,7 +85,7 @@ class BranchLineageTest(GraphTest):
                 self.assertIn(orig, g.edge)
                 self.assertIn(dest, g.edge[orig])
         self.engine.branch = 'square'
-        self.assertNotIn(3, g.node)
+        self.assertNotIn(0, g.edge[2])
         self.engine.rev = 2
         self.assertIn(3, g.node)
         self.assertIn(1, g.edge[0])
