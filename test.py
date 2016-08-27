@@ -150,10 +150,9 @@ class CompiledQueriesTest(GormTest):
         from gorm.alchemy import Alchemist
         self.assertTrue(hasattr(self.engine.db, 'alchemist'))
         self.assertTrue(isinstance(self.engine.db.alchemist, Alchemist))
-        from json import loads
-        precompiled = loads(
-            open(self.engine.db.json_path + '/sqlite.json', 'r').read()
-        )
+        from json import load
+        with open(self.engine.db.json_path + '/sqlite.json', 'r') as jsonfile:
+            precompiled = load(jsonfile)
         self.assertEqual(
             precompiled.keys(), self.engine.db.alchemist.sql.keys()
         )
