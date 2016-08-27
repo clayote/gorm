@@ -12,23 +12,61 @@ from .xjson import (
 from .reify import reify
 
 
-class GraphMapping(MutableMapping):
-    """Mapping for graph attributes"""
-    def __init__(self, graph):
-        """Initialize private dict and store pointers to the graph and ORM"""
-        self.graph = graph
-        self.gorm = graph.gorm
+class NeatMapping(MutableMapping):
+    def clear(self):
+        """Delete everything"""
+        for k in list(self.keys()):
+            del self[k]
+
+    def __repr__(self):
+        return "{}(graph{}, data {})".format(self.__class__.__name__, self.graph.name, repr(dict(self)))
+
+    def update(self, other):
+        """Version of ``update`` that doesn't clobber the database so much"""
+        iteratr = (
+            other.iteritems
+            if hasattr(other, 'iteritems')
+            else other.items
+        )
+        for (k, v) in iteratr():
+            if (
+                    k not in self or
+                    self[k] != v
+            ):
+                self[k] = v
+
+
+class AbstractEntityMapping(NeatMapping):
+    @property
+    def _cache(self):
+        """Return a dictionary of dictionaries in which to cache myself by branch and rev."""
+        raise NotImplementedError
+
+    def _keys(self):
+        """Return a list of keys from the database (not the cache)."""
+        raise NotImplementedError
+
+    def _get(self, key):
+        """Return a value of a key from the database (not the cache)."""
+        raise NotImplementedError
+
+    def _set(self, key, value):
+        """Set a value for a key in the database (not the cache)."""
+        raise NotImplementedError
+
+    def _del(self, key):
+        """Delete a key from the database (not the cache)."""
+        raise NotImplementedError
 
     def __iter__(self):
         """Iterate over the keys that are set"""
         if self.gorm.caching:
-            cache = self.gorm._graph_val_cache[self.graph.name]
-            for k in cache:
+            for k in self._cache:
                 for (branch, rev) in self.gorm._active_branches():
-                    if branch not in cache[k]:
+                    if branch not in self._cache[k]:
                         continue
                     try:
-                        v = cache[k][branch][rev]
+                        v = self._cache[k][branch][rev]
                         if v is not None:
                             yield k
                         break
@@ -37,11 +75,7 @@ class GraphMapping(MutableMapping):
             return
         seen = set()
         for (branch, rev) in self.gorm._active_branches():
-            for k in self.gorm.db.graph_val_keys(
-                    self.graph.name,
-                    branch,
-                    rev
-            ):
+            for k in self._keys():
                 if k not in seen:
                     yield k
                 seen.add(k)
@@ -49,21 +83,15 @@ class GraphMapping(MutableMapping):
     def __contains__(self, k):
         """Do I have a value for this key right now?"""
         if self.gorm.caching:
-            cache = self.gorm._graph_val_cache[self.graph.name][k]
             for (branch, rev) in self.gorm._active_branches():
-                if branch not in cache:
+                if branch not in self._cache[k]:
                     continue
                 try:
-                    return cache[branch][rev] is not None
+                    return self._cache[k][branch][rev] is not None
                 except KeyError:
                     continue
             return False
-        return self.gorm.db.graph_val_get(
-            self.graph.name,
-            k,
-            self.gorm.branch,
-            self.gorm.rev
-        )
+        return self._get(k) is not None
 
     def __len__(self):
         """Number of set keys"""
@@ -71,34 +99,6 @@ class GraphMapping(MutableMapping):
         for k in iter(self):
             n += 1
         return n
-
-    def _get(self, key):
-        """Just load value from database and return"""
-        if self.gorm.caching:
-            cache = self.gorm._graph_val_cache[self.graph.name][key]
-            for (branch, rev) in self.gorm._active_branches():
-                if branch not in cache:
-                    continue
-                try:
-                    result = cache[branch][rev]
-                    if result is None:
-                        raise KeyError("Key {} is not set now".format(key))
-                    return result
-                except KeyError:
-                    continue
-            raise KeyError("Key {} is not set, ever".format(key))
-        for (branch, rev) in self.gorm._active_branches():
-            result = self.gorm.db.graph_val_get(
-                self.graph.name,
-                key,
-                branch,
-                rev
-            )
-            if not result:
-                continue
-            return result
-
-        raise KeyError("Key is not set, ever")
 
     def __getitem__(self, key):
         """If key is 'graph', return myself as a dict, else get the present
@@ -117,83 +117,88 @@ class GraphMapping(MutableMapping):
             else:
                 return v
 
-        if key == 'graph':
-            return dict(self)
         if self.gorm.caching:
-            cache = self.gorm._graph_val_cache[self.graph.name][key]
             for (branch, rev) in self.gorm._active_branches():
-                if branch not in cache:
+                if branch not in self._cache[key    ]:
                     continue
                 try:
-                    r = cache[branch][rev]
+                    r = self._cache[key][branch][rev]
                     if r is None:
                         raise KeyError("key {} is not set now".format(key))
                     return wrapval(r)
                 except KeyError:
                     continue
             raise KeyError("key {} is not set, ever".format(key))
-        return wrapval(self.gorm.db.graph_val_get(
-            self.graph.name,
-            key,
-            self.gorm.branch,
-            self.gorm.rev
-        ))
+        return wrapval(self._get(key))
 
     def __setitem__(self, key, value):
         """Set key=value at the present branch and revision"""
         if value is None:
             raise ValueError("gorm uses None to indicate that a key's been deleted")
-        branch = self.gorm.branch
-        rev = self.gorm.rev
-        self.gorm.db.graph_val_set(
-            self.graph.name,
-            key,
-            branch,
-            rev,
-            value
-        )
+        self._set(key, value)
         if self.gorm.caching:
-            self.gorm._graph_val_cache[self.graph.name][key][branch][rev] = value
+            self._cache[key][self.gorm.branch][self.gorm.rev] = value
 
     def __delitem__(self, key):
         """Indicate that the key has no value at this time"""
-        branch = self.gorm.branch
-        rev = self.gorm.rev
+        self._del(key)
+        if self.gorm.caching:
+            self._cache[key][self.gorm.branch][self.gorm.rev] = None
+
+
+class GraphMapping(AbstractEntityMapping):
+    """Mapping for graph attributes"""
+    @property
+    def _cache(self):
+        return self.gorm._graph_val_cache[self.graph.name]
+
+    def __init__(self, graph):
+        """Initialize private dict and store pointers to the graph and ORM"""
+        self.graph = graph
+        self.gorm = graph.gorm
+
+    def _keys(self):
+        """Return keys from the database"""
+        return self.gorm.db.graph_val_keys(
+                self.graph.name,
+                self.gorm.branch,
+                self.gorm.rev
+        )
+
+    def _get(self, key):
+        """Just load value from database and return"""
+        return self.gorm.db.graph_val_get(
+            self.graph.name,
+            key,
+            self.gorm.branch,
+            self.gorm.rev
+        )
+
+    def _set(self, key, value):
+        """Set key=value in the database (not the cache)"""
+        self.gorm.db.graph_val_set(
+            self.graph.name,
+            key,
+            self.gorm.branch,
+            self.gorm.rev,
+            value
+        )
+
+    def _del(self, key):
+        """Delete the value from the database (not the cache)"""
         self.gorm.db.graph_val_del(
             self.graph.name,
             key,
-            branch,
-            rev
+            self.gorm.branch,
+            self.gorm.rev
         )
-        if self.gorm.caching:
-            self.gorm._graph_val_cache[self.graph.name][key][branch][rev] = None
-
-    def clear(self):
-        """Delete everything"""
-        for k in iter(self):
-            del self[k]
-
-    def __repr__(self):
-        """Looks like a dictionary."""
-        return repr(dict(self))
-
-    def update(self, other):
-        """Version of ``update`` that doesn't clobber the database so much"""
-        iteratr = (
-            other.iteritems
-            if hasattr(other, 'iteritems')
-            else other.items
-        )
-        for (k, v) in iteratr():
-            if (
-                    k not in self or
-                    self[k] != v
-            ):
-                self[k] = v
 
 
-class Node(GraphMapping):
+class Node(AbstractEntityMapping):
     """Mapping for node attributes"""
+    @property
+    def _cache(self):
+        return self.gorm._node_val_cache[self.graph.name][self.node]
 
     def __init__(self, graph, node):
         """Store name and graph"""
@@ -201,48 +206,15 @@ class Node(GraphMapping):
         self.gorm = graph.gorm
         self.node = node
 
-    def __iter__(self):
-        """Iterate over those keys that are set at the moment
-
-        """
-        if self.gorm.caching:
-            cache = self.gorm._node_val_cache[self.graph.name][self.node]
-            for key in cache:
-                for (branch, rev) in self.gorm._active_branches():
-                    if branch not in cache[key]:
-                        continue
-                    try:
-                        v = cache[key][branch][rev]
-                        if v is not None:
-                            yield key
-                        break
-                    except KeyError:
-                        continue
-            return
-
-        for k in self.gorm.db.node_val_keys(
+    def _keys(self):
+        return self.gorm.db.node_val_keys(
             self.graph.name,
             self.node,
             self.gorm.branch,
             self.gorm.rev
-        ):
-            yield k
+        )
 
     def _get(self, key):
-        if self.gorm.caching:
-            cache = self.gorm._node_val_cache[self.graph.name][self.node][key]
-            for (branch, rev) in self.gorm._active_branches():
-                if branch not in cache:
-                    continue
-                try:
-                    r = cache[branch][rev]
-                except KeyError:
-                    continue
-                if r is None:
-                    raise KeyError("Key {} is not set now".format(key))
-                else:
-                    return r
-            raise KeyError("Key {} is never set".format(key))
         return self.gorm.db.node_val_get(
             self.graph.name,
             self.node,
@@ -251,63 +223,32 @@ class Node(GraphMapping):
             self.gorm.rev
         )
 
-    def __getitem__(self, key):
-        """Get the value of the key at the present branch and rev"""
-        r = self._get(key)
-        if isinstance(r, list):
-            if self.gorm.caching:
-                return JSONListReWrapper(self, key, r)
-            return JSONListWrapper(self, key)
-        elif isinstance(r, dict):
-            if self.gorm.caching:
-                return JSONReWrapper(self, key, r)
-            return JSONWrapper(self, key)
-        else:
-            return r
-
-    def __setitem__(self, key, value):
-        """Set key=value at the present branch and rev. Overwrite if
-        necessary.
-
-        """
-        branch = self.gorm.branch
-        rev = self.gorm.rev
+    def _set(self, key, value):
         self.gorm.db.node_val_set(
             self.graph.name,
             self.node,
             key,
-            branch,
-            rev,
+            self.gorm.branch,
+            self.gorm.rev,
             value
         )
-        if self.gorm.caching:
-            self.gorm._node_val_cache[self.graph.name][self.node][key][branch][rev] = value
 
-    def __delitem__(self, key):
-        """Set the key's value to NULL, indicating it should be ignored
-        now and in future revs
-
-        """
-        branch = self.gorm.branch
-        rev = self.gorm.rev
+    def _del(self, key):
         self.gorm.db.node_val_del(
             self.graph.name,
             self.node,
             key,
-            branch,
-            rev
+            self.gorm.branch,
+            self.gorm.rev
         )
-        if self.gorm.caching:
-            self.gorm._node_val_cache[self.graph.name][self.node][key][branch][rev] = None
-
-    def clear(self):
-        """Delete everything"""
-        for k in self:
-            del self[k]
 
 
-class Edge(GraphMapping):
+class Edge(AbstractEntityMapping):
     """Mapping for edge attributes"""
+    @property
+    def _cache(self):
+        return self.gorm._edge_val_cache[self.graph.name][self.nodeA][self.nodeB][self.idx]
+
     def __init__(self, graph, nodeA, nodeB, idx=0):
         """Store the graph, the names of the nodes, and the index.
 
@@ -320,43 +261,17 @@ class Edge(GraphMapping):
         self.nodeB = nodeB
         self.idx = idx
 
-    def __iter__(self):
-        """Yield those keys that have a value"""
-        if self.gorm.caching:
-            cache = self.gorm._edge_val_cache[self.graph.name][self.nodeA][self.nodeB][self.idx]
-            for k in cache:
-                for (branch, rev) in self.gorm._active_branches():
-                    if branch not in cache[k]:
-                        continue
-                    try:
-                        result = cache[k][branch][rev]
-                        if result is not None:
-                            yield k
-                        break
-                    except KeyError:
-                        continue
-            return
-        for k in self.gorm.db.edge_val_keys(
+    def _keys(self):
+        return self.gorm.db.edge_val_keys(
             self.graph.name,
             self.nodeA,
             self.nodeB,
             self.idx,
             self.gorm.branch,
             self.gorm.rev
-        ):
-            yield k
+        )
 
     def _get(self, key):
-        if self.gorm.caching:
-            cache = self.gorm._edge_val_cache[self.graph.name][self.nodeA][self.nodeB][self.idx][key]
-            for (branch, rev) in self.gorm._active_branches():
-                if branch not in cache:
-                    continue
-                result = cache[branch][rev]
-                if result is None:
-                    raise KeyError("Key {} is not set now".format(key))
-                return result
-            raise KeyError("Key is not set, ever")
         return self.gorm.db.edge_val_get(
             self.graph.name,
             self.nodeA,
@@ -367,28 +282,7 @@ class Edge(GraphMapping):
             self.gorm.rev
         )
 
-    def __getitem__(self, key):
-        """Return the present value of the key, or raise KeyError if it's
-        unset
-
-        """
-        r = self._get(key)
-        if isinstance(r, list):
-            if self.gorm.caching:
-                return JSONListReWrapper(self, key, r)
-            return JSONListWrapper(self, key)
-        elif isinstance(r, dict):
-            if self.gorm.caching:
-                return JSONReWrapper(self, key, r)
-            return JSONWrapper(self, key)
-        else:
-            return r
-
-    def __setitem__(self, key, value):
-        """Set a database record to say that key=value at the present branch
-        and revision
-
-        """
+    def _set(self, key, value):
         self.gorm.db.edge_val_set(
             self.graph.name,
             self.nodeA,
@@ -399,14 +293,8 @@ class Edge(GraphMapping):
             self.gorm.rev,
             value
         )
-        if self.gorm.caching:
-            self.gorm._edge_val_cache[self.graph.name][self.nodeA][self.nodeB][self.idx][self.gorm.branch][self.gorm.rev] = value
 
-    def __delitem__(self, key):
-        """Set the key's value to NULL, such that it is not yielded by
-        ``__iter__``
-
-        """
+    def _del(self, key):
         self.gorm.db.edge_val_del(
             self.graph.name,
             self.nodeA,
@@ -416,16 +304,9 @@ class Edge(GraphMapping):
             self.gorm.branch,
             self.gorm.rev
         )
-        if self.gorm.caching:
-            self.gorm._edge_val_cache[self.graph.name][self.nodeA][self.nodeB][self.idx][self.gorm.branch][self.gorm.rev] = None
-
-    def clear(self):
-        """Delete everything"""
-        for k in self:
-            del self[k]
 
 
-class GraphNodeMapping(GraphMapping):
+class GraphNodeMapping(NeatMapping):
     """Mapping for nodes in a graph"""
     def __init__(self, graph):
         self.graph = graph
@@ -525,7 +406,7 @@ class GraphNodeMapping(GraphMapping):
         return True
 
 
-class GraphEdgeMapping(GraphMapping):
+class GraphEdgeMapping(NeatMapping):
     """Provides an adjacency mapping and possibly a predecessor mapping
     for a graph.
 
@@ -534,9 +415,6 @@ class GraphEdgeMapping(GraphMapping):
         """Store the graph"""
         self.graph = graph
         self.gorm = graph.gorm
-
-    def __repr__(self):
-        return "{}(graph {}, data {})".format(self.__class__.__name__, self.graph.name, repr(dict(self)))
 
     def __eq__(self, other):
         """Compare dictified versions of the edge mappings within me.
@@ -729,6 +607,9 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
 
     def __iter__(self):
         return iter(self.graph.node)
+
+    def __len__(self):
+        return len(self.graph.node)
 
     def __contains__(self, nodeA):
         return nodeA in self.graph.node
