@@ -394,6 +394,9 @@ def queries_for_table_dict(table):
         'del_edge_val_graph': table['edge_val'].delete().where(
             table['edge_val'].c.graph == bindparam('graph')
         ),
+        'del_edge_graph': table['edges'].delete().where(
+            table['edges'].c.graph == bindparam('graph')
+        ),
         'del_node_val_graph': table['node_val'].delete().where(
             table['node_val'].c.graph == bindparam('graph')
         ),
