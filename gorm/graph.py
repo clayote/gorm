@@ -914,7 +914,7 @@ class MultiGraphSuccessorsMapping(GraphSuccessorsMapping):
     """Mapping of Successors that map to MultiEdges"""
     def __getitem__(self, nodeA):
         """If the node exists, return its Successors"""
-        if not self.gorm._node_exists(self.graph.name, nodeA):
+        if nodeA not in self.graph.node:
             raise KeyError("No such node")
         return self.Successors(self, nodeA)
 
