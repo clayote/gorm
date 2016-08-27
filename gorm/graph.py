@@ -1181,7 +1181,7 @@ class MultiGraph(GormGraph, networkx.MultiGraph):
 
     @reify
     def adj(self):
-        return MultiGraphSuccessorsMapping(self.gorm, self._name)
+        return MultiGraphSuccessorsMapping(self)
 
     @property
     def edge(self):
@@ -1202,7 +1202,7 @@ class MultiDiGraph(GormGraph, networkx.MultiDiGraph):
 
     @reify
     def adj(self):
-        return MultiGraphSuccessorsMapping(self.gorm, self._name)
+        return MultiGraphSuccessorsMapping(self)
 
     @property
     def succ(self):
@@ -1210,7 +1210,7 @@ class MultiDiGraph(GormGraph, networkx.MultiDiGraph):
 
     @reify
     def pred(self):
-        return MultiDiGraphPredecessorsMapping(self.gorm, self._name)
+        return MultiDiGraphPredecessorsMapping(self)
 
     def remove_edge(self, u, v, key=None):
         """Version of remove_edge that's much like normal networkx but only
