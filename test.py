@@ -1,8 +1,6 @@
 import unittest
 from copy import deepcopy
 import gorm
-import networkx as nx
-from networkx.generators.atlas import graph_atlas_g
 
 
 testkvs = [0, 1, 10, 10**10, 10**10**4, 'spam', 'eggs', 'ham',  '💧', '🔑', '𐦖',('spam', 'eggs', 'ham')]
