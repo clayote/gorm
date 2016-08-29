@@ -115,8 +115,8 @@ class QueryEngine(object):
             lite_init(dbstring, connect_args)
 
         self._branches = {}
-        self.json_dump = json_dump if json_dump else xjson.json_dump
-        self.json_load = json_load if json_load else xjson.json_load
+        self.json_dump = json_dump or xjson.json_dump
+        self.json_load = json_load or xjson.json_load
 
     @reify
     def globl(self):
