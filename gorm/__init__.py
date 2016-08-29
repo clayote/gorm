@@ -32,6 +32,8 @@ class ORM(object):
                 )
             )
         )
+        if not self.db:
+            return r
         for (graph, key, branch, rev, value) in self.db.graph_val_dump():
             r[graph][key][branch][rev] = value
         return r
@@ -49,6 +51,8 @@ class ORM(object):
                 )
             )
         )
+        if not self.db:
+            return r
         for (graph, node, key, branch, rev, value) in self.db.node_val_dump():
             r[graph][node][key][branch][rev] = value
         return r
@@ -64,6 +68,8 @@ class ORM(object):
                 )
             )
         )
+        if not self.db:
+            return r
         for (graph, node, branch, rev, extant) in self.db.nodes_dump():
             r[graph][node][branch][rev] = extant
         return r
@@ -85,6 +91,8 @@ class ORM(object):
                 )
             )
         )
+        if not self.db:
+            return r
         for (
                 graph, nodeA, nodeB, idx, key, branch, rev, value
         ) in self.db.edge_val_dump():
@@ -106,6 +114,8 @@ class ORM(object):
                 )
             )
         )
+        if not self.db:
+            return r
         for (
                 graph, nodeA, nodeB, idx, branch, rev, extant
         ) in self.db.edges_dump():
@@ -126,17 +136,20 @@ class ORM(object):
         either case, begin a transaction.
 
         """
-        self.db = query_engine_class(dbstring, connect_args, alchemy, json_dump, json_load)
+        self.db = query_engine_class(dbstring, connect_args, alchemy, json_dump, json_load) if dbstring else None
         self._obranch = None
         self._orev = None
-        self.db.initdb()
         # I will be recursing a lot so just cache all the branch info
         self._childbranch = defaultdict(set)
         self._parentbranch_rev = {}
-        for (branch, parent, parent_rev) in self.db.all_branches():
-            self._parentbranch_rev[branch] = (parent, parent_rev)
-            self._childbranch[parent].add(branch)
+        if self.db:
+            self.db.initdb()
+            for (branch, parent, parent_rev) in self.db.all_branches():
+                self._parentbranch_rev[branch] = (parent, parent_rev)
+                self._childbranch[parent].add(branch)
         if caching:
+            if not self.db:
+                raise ValueError("Without a cache or a database I can't do anything")
             self.caching = True
             self.graph = {}
             for (graph, typ) in self.db.graphs_types():
@@ -149,6 +162,8 @@ class ORM(object):
             self._obranch = self.branch
             self._orev = self.rev
             self._active_branches_cache = []
+            if not self.db:
+                return
             self.db.active_branches = self._active_branches
             todo = deque(self.db.timestream_data())
             while todo:
@@ -260,7 +275,8 @@ class ORM(object):
                     "occurs before the start of "
                     "the branch {brnch}".format(revn=v, brnch=branch)
                 )
-        self.db.globl['rev'] = v
+        if self.db:
+            self.db.globl['rev'] = v
         if self.caching:
             self._orev = v
 
@@ -286,7 +302,8 @@ class ORM(object):
         data if provided.
 
         """
-        self._init_graph(name, 'Graph')
+        if self.db:
+            self._init_graph(name, 'Graph')
         g = Graph(self, name, data, **attr)
         if self.caching:
             self.graph[name] = g
@@ -297,7 +314,8 @@ class ORM(object):
         data if provided.
 
         """
-        self._init_graph(name, 'DiGraph')
+        if self.db:
+            self._init_graph(name, 'DiGraph')
         dg = DiGraph(self, name, data, **attr)
         if self.caching:
             self.graph[name] = dg
@@ -308,7 +326,8 @@ class ORM(object):
         data if provided.
 
         """
-        self._init_graph(name, 'MultiGraph')
+        if self.db:
+            self._init_graph(name, 'MultiGraph')
         mg = MultiGraph(self, name, data, **attr)
         if self.caching:
             self.graph[name] = mg
@@ -319,7 +338,8 @@ class ORM(object):
         data if provided.
 
         """
-        self._init_graph(name, 'MultiDiGraph')
+        if self.db:
+            self._init_graph(name, 'MultiDiGraph')
         mdg = MultiDiGraph(self, name, data, **attr)
         if self.caching:
             self.graph[name] = mdg
@@ -333,6 +353,8 @@ class ORM(object):
         """
         if self.caching and name in self.graph:
             return self.graph[name]
+        if not self.db:
+            raise KeyError("No graph named " + str(name))
         graphtypes = {
             'Graph': Graph,
             'DiGraph': DiGraph,
@@ -351,7 +373,8 @@ class ORM(object):
         """Remove all traces of a graph's existence from the database"""
         # make sure the graph exists before deleting anything
         self.get_graph(name)
-        self.db.del_graph(name)
+        if self.db:
+            self.db.del_graph(name)
         if self.caching and name in self.graph:
             del self.graph[name]
 
