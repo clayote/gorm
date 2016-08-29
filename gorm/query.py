@@ -77,6 +77,7 @@ class QueryEngine(object):
         my own transaction though.
 
         """
+        dbstring = dbstring or 'sqlite:///:memory:'
         def alchem_init(dbstring, connect_args):
             from sqlalchemy import create_engine
             from sqlalchemy.engine.base import Engine
