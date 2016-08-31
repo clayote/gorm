@@ -134,7 +134,8 @@ class ORM(object):
         self._childbranch = defaultdict(set)
         self._parentbranch_rev = {}
         for (branch, parent, parent_rev) in self.db.all_branches():
-            self._parentbranch_rev[branch] = (parent, parent_rev)
+            if branch != 'master':
+                self._parentbranch_rev[branch] = (parent, parent_rev)
             self._childbranch[parent].add(branch)
         if caching:
             self.caching = True
