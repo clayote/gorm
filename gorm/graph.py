@@ -437,35 +437,7 @@ class GraphEdgeMapping(NeatMapping):
         return True
 
     def __iter__(self):
-        if self.gorm.caching:
-            cache = self.gorm._edges_cache[self.graph.name]
-            seen = set()
-            for nodeA in cache:
-                if nodeA in seen:
-                    continue
-                for nodeB in cache[nodeA]:
-                    if nodeB in seen:
-                        continue
-                    for idx in cache[nodeA][nodeB]:
-                        for (branch, rev) in self.gorm._active_branches():
-                            if branch not in cache[nodeA][nodeB][idx]:
-                                continue
-                            try:
-                                if cache[nodeA][nodeB][idx][branch][rev]:
-                                    yield nodeA
-                                    yield nodeB
-                                seen.add(nodeA)
-                                seen.add(nodeB)
-                                break
-                            except KeyError:
-                                continue
-            return
-        for nodeA in self.gorm.db.edges_extant(
-            self.graph.name,
-            self.gorm.branch,
-            self.gorm.rev
-        ):
-            yield nodeA
+        return iter(self.graph.node)
 
 
 class AbstractSuccessors(GraphEdgeMapping):
