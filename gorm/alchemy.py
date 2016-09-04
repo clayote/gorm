@@ -786,4 +786,4 @@ if __name__ == '__main__':
         compile_sql(e.dialect, MetaData()).items()
     )
 
-    print(dumps(out))
+    print(dumps(out, indent=4, sort_keys=True))
