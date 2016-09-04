@@ -643,32 +643,10 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
         self.Predecessors(self, nodeB).clear()
 
     def __iter__(self):
-        """Iterate over nodes with at least one edge leading to them"""
-        if self.gorm.caching:
-            cache = self.gorm._edges_cache[self.graph.name]
-            for nodeA in cache:
-                for nodeB in cache[nodeA]:
-                    seen = False
-                    for idx in cache[nodeA][nodeB]:
-                        if seen:
-                            break
-                        for (branch, rev) in self.gorm._active_branches():
-                            if branch not in cache[nodeA][nodeB]:
-                                continue
-                            try:
-                                if cache[nodeA][nodeB][idx][branch][rev]:
-                                    yield nodeB
-                                seen = True
-                                break
-                            except KeyError:
-                                continue
-            return
-        return self.gorm.db.nodeBs(
-            self.graph.name,
-            self.nodeA,
-            self.gorm.branch,
-            self.gorm.rev
-        )
+        return iter(self.graph.node)
+
+    def __len__(self):
+        return len(self.graph.node)
 
     class Predecessors(GraphEdgeMapping):
         """Mapping of Edges that end at a particular node"""
