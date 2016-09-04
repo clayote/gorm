@@ -364,6 +364,7 @@ def queries_for_table_dict(table):
                 table['edge_val'].c.nodeA == bindparam('orig'),
                 table['edge_val'].c.nodeB == bindparam('dest'),
                 table['edge_val'].c.idx == bindparam('idx'),
+                table['edge_val'].c.key == bindparam('key'),
                 table['edge_val'].c.branch == bindparam('branch'),
                 table['edge_val'].c.rev == bindparam('rev')
             )
