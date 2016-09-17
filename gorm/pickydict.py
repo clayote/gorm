@@ -6,6 +6,8 @@ class PickyDefaultDict(dict):
     They take arguments ``self`` and the unused key being looked up.
     
     """
+    __slots__ = ['type', 'args_munger', 'kwargs_munger']
+
     def __init__(self, type=object, args_munger=lambda self, k: tuple(), kwargs_munger=lambda self, k: dict()):
         self.type = type
         self.args_munger = args_munger
@@ -34,6 +36,8 @@ class StructuredDefaultDict(dict):
     This will never accept manual assignments at any layer but the deepest.
     
     """
+    __slots__ = ['layer', 'type', 'args_munger', 'kwargs_munger']
+
     def __init__(self, layers, type=object, args_munger=lambda self, k: tuple(), kwargs_munger=lambda self, k: dict()):
         if layers < 1:
             raise ValueError("Not enough layers")
