@@ -37,7 +37,7 @@ class StructuredDefaultDict(dict):
     def __init__(self, layers, type=object, args_munger=lambda self, k: tuple(), kwargs_munger=lambda self, k: dict()):
         if layers < 1:
             raise ValueError("Not enough layers")
-        self.layers = layers
+        self.layer = layers
         self.type = type
         self.args_munger = args_munger
         self.kwargs_munger = kwargs_munger
@@ -45,10 +45,10 @@ class StructuredDefaultDict(dict):
     def __getitem__(self, k):
         if k in self:
             return super(StructuredDefaultDict, self).__getitem__(k)
-        if self.layers < 2:
+        if self.layer < 2:
             ret = PickyDefaultDict(self.type, self.args_munger, self.kwargs_munger)
         else:
-            ret = StructuredDefaultDict(self.layers-1, self.type, self.args_munger, self.kwargs_munger)
+            ret = StructuredDefaultDict(self.layer-1, self.type, self.args_munger, self.kwargs_munger)
         super(StructuredDefaultDict, self).__setitem__(k, ret)
         return ret
 
