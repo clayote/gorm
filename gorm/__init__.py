@@ -1,6 +1,7 @@
 # This file is part of gorm, an object relational mapper for versioned graphs.
 # Copyright (C) 2014 Zachary Spector.
 from collections import defaultdict, deque
+from .pickydict import StructuredDefaultDict
 from .graph import (
     Graph,
     DiGraph,
@@ -9,6 +10,7 @@ from .graph import (
 )
 from .query import QueryEngine
 from .reify import reify
+from .window import WindowDict
 
 
 class GraphNameError(KeyError):
@@ -24,14 +26,8 @@ class ORM(object):
     @reify
     def _graph_val_cache(self):
         assert(self.caching)
-        from .window import WindowDict
-        r = defaultdict(  # graph:
-            lambda: defaultdict(  # key:
-                lambda: defaultdict(  # branch:
-                    WindowDict  # rev: value
-                )
-            )
-        )
+        # graph: key: branch: rev: value
+        r = StructuredDefaultDict(2, WindowDict)
         for (graph, key, branch, rev, value) in self.db.graph_val_dump():
             r[graph][key][branch][rev] = value
         return r
@@ -39,16 +35,8 @@ class ORM(object):
     @reify
     def _node_val_cache(self):
         assert(self.caching)
-        from .window import WindowDict
-        r = defaultdict(  # graph:
-            lambda: defaultdict(  # node:
-                lambda: defaultdict(  # key:
-                    lambda: defaultdict(  # branch:
-                        WindowDict  # rev: value
-                    )
-                )
-            )
-        )
+        # graph: node: key: branch: rev: value
+        r = StructuredDefaultDict(3, WindowDict)
         for (graph, node, key, branch, rev, value) in self.db.node_val_dump():
             r[graph][node][key][branch][rev] = value
         return r
@@ -56,14 +44,8 @@ class ORM(object):
     @reify
     def _nodes_cache(self):
         assert(self.caching)
-        from .window import WindowDict
-        r = defaultdict(  # graph:
-            lambda: defaultdict(  # node:
-                lambda: defaultdict(  # branch:
-                    WindowDict  # rev: extant
-                )
-            )
-        )
+        # graph: node: branch: rev: extant
+        r = StructuredDefaultDict(2, WindowDict)
         for (graph, node, branch, rev, extant) in self.db.nodes_dump():
             r[graph][node][branch][rev] = extant
         return r
@@ -71,20 +53,8 @@ class ORM(object):
     @reify
     def _edge_val_cache(self):
         assert(self.caching)
-        from .window import WindowDict
-        r = defaultdict(  # graph:
-            lambda: defaultdict(  # nodeA:
-                lambda: defaultdict(  # nodeB:
-                    lambda: defaultdict(  # idx:
-                        lambda: defaultdict(  # key:
-                            lambda: defaultdict(  # branch:
-                                WindowDict  # rev: value
-                            )
-                        )
-                    )
-                )
-            )
-        )
+        # graph: nodeA: nodeB: idx: key: branch: rev: value
+        r = StructuredDefaultDict(5, WindowDict)
         for (
                 graph, nodeA, nodeB, idx, key, branch, rev, value
         ) in self.db.edge_val_dump():
@@ -94,18 +64,8 @@ class ORM(object):
     @reify
     def _edges_cache(self):
         assert self.caching
-        from .window import WindowDict
-        r = defaultdict(  # graph:
-            lambda: defaultdict(  # nodeA:
-                lambda: defaultdict(  # nodeB:
-                    lambda: defaultdict(  # idx:
-                        lambda: defaultdict(  # branch:
-                            WindowDict  # rev: extant
-                        )
-                    )
-                )
-            )
-        )
+        # graph: nodeA: nodeB: idx: branch: rev: extant
+        r = StructuredDefaultDict(4, WindowDict)
         for (
                 graph, nodeA, nodeB, idx, branch, rev, extant
         ) in self.db.edges_dump():
