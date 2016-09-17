@@ -2,7 +2,7 @@
 # Copyright (C) 2014 Zachary Spector.
 import networkx
 from networkx.exception import NetworkXError
-from collections import MutableMapping, MutableSequence
+from collections import MutableMapping
 from .xjson import (
     JSONWrapper,
     JSONListWrapper,
