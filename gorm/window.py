@@ -1,4 +1,45 @@
-from collections import deque, MutableMapping
+from collections import deque, MutableMapping, ItemsView, ValuesView
+
+
+class WindowDictItemsView(ItemsView):
+    def __contains__(self, item):
+        (rev, v) = item
+        if self._mapping._past:
+            if rev < self._mapping._past[0][0]:
+                return False
+        elif self._mapping._future:
+            if rev < self._mapping._future[0][0]:
+                return False
+        else:
+            return False
+        for mrev, mv in self._mapping._past:
+            if mrev == rev:
+                return mv == v
+        for mrev, mv in self._mapping._future:
+            if mrev == rev:
+                return mv == v
+        return False
+
+    def __iter__(self):
+        yield from self._mapping._past
+        yield from self._mapping._future
+
+
+class WindowDictValuesView(ValuesView):
+    def __contains__(self, value):
+        for rev, v in self._mapping._past:
+            if v == value:
+                return True
+        for rev, v in self._mapping._future:
+            if v == value:
+                return True
+        return False
+
+    def __iter__(self):
+        for rev, v in self._mapping._past:
+            yield v
+        for rev, v in self._mapping._future:
+            yield v
 
 
 class WindowDict(MutableMapping):
@@ -30,6 +71,12 @@ class WindowDict(MutableMapping):
         self.seek(rev)
         if self._future:
             return self._future[0][0]
+
+    def items(self):
+        return WindowDictItemsView(self)
+
+    def values(self):
+        return WindowDictValuesView(self)
 
     def __init__(self, data={}):
         self._past = deque(sorted(data.items()))
