@@ -346,7 +346,7 @@ def queries_for_table_dict(table):
         ).where(
             table['global'].c.key == bindparam('key')
         ),
-        'edge_val_ins': table['edge_val'].insert().values(
+        'edge_val_ins': table['edge_val'].insert().prefix_with('OR REPLACE').values(
             graph=bindparam('graph'),
             nodeA=bindparam('orig'),
             nodeB=bindparam('dest'),
@@ -454,7 +454,7 @@ def queries_for_table_dict(table):
                 ]
             )
         ),
-        'exist_node_ins': table['nodes'].insert().values(
+        'exist_node_ins': table['nodes'].insert().prefix_with('OR REPLACE').values(
             graph=bindparam('graph'),
             node=bindparam('node'),
             branch=bindparam('branch'),
@@ -517,7 +517,7 @@ def queries_for_table_dict(table):
                 ]
             )
         ),
-        'graph_val_ins': table['graph_val'].insert().values(
+        'graph_val_ins': table['graph_val'].insert().prefix_with('OR REPLACE').values(
             graph=bindparam('graph'),
             key=bindparam('key'),
             branch=bindparam('branch'),
@@ -574,24 +574,13 @@ def queries_for_table_dict(table):
         ).where(
             table['node_val'].c.value != null()
         ),
-        'node_val_ins': table['node_val'].insert().values(
+        'node_val_ins': table['node_val'].insert().prefix_with('OR REPLACE').values(
             graph=bindparam('graph'),
             node=bindparam('node'),
             key=bindparam('key'),
             branch=bindparam('branch'),
             rev=bindparam('rev'),
             value=bindparam('value')
-        ),
-        'node_val_upd': table['node_val'].update().values(
-            value=bindparam('value')
-        ).where(
-            and_(
-                table['node_val'].c.graph == bindparam('graph'),
-                table['node_val'].c.node == bindparam('node'),
-                table['node_val'].c.key == bindparam('key'),
-                table['node_val'].c.branch == bindparam('branch'),
-                table['node_val'].c.rev == bindparam('rev')
-            )
         ),
         'edge_exists': select(
             [table['edges'].c.extant]
@@ -676,7 +665,7 @@ def queries_for_table_dict(table):
             table['edges'].c.rev,
             table['edges'].c.extant
         ]),
-        'edge_exist_ins': table['edges'].insert().values(
+        'edge_exist_ins': table['edges'].insert().prefix_with('OR REPLACE').values(
             graph=bindparam('graph'),
             nodeA=bindparam('orig'),
             nodeB=bindparam('dest'),
@@ -776,8 +765,15 @@ class Alchemist(object):
             elif largs:
                 raise TypeError("{} is a DDL query, I think".format(k))
             return self.conn.execute(statement)
+        def manycaller(k, *largs):
+            statement = self.sql[k]
+            return self.conn.execute(statement, *(dict(zip(statement.positiontup, larg)) for larg in largs))
+        class Many(object):
+            pass
+        self.many = Many()
         for (key, query) in self.sql.items():
             setattr(self, key, partial(caller, key))
+            setattr(self.many, key, partial(manycaller, key))
 
 
 if __name__ == '__main__':
