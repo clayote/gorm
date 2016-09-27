@@ -131,7 +131,7 @@ class QueryEngine(object):
         """Wrapper for the various prewritten or compiled SQL calls.
 
         First argument is the name of the query, either a key in
-        ``gorm.sql.sqlite_strings`` or a method name in
+        ``sqlite.json`` or a method name in
         ``gorm.alchemy.Alchemist``. The rest of the arguments are
         parameters to the query.
 
