@@ -5,8 +5,12 @@ code that's more to do with the queries than with the data per se
 doesn't pollute the other files so much.
 
 """
+import os
 from collections import MutableMapping
-from sqlite3 import IntegrityError as sqliteIntegError
+from sqlalchemy import create_engine, MetaData, select, func, and_, or_
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.engine.base import Engine
+from .schema import tables_for_meta, indices_for_table_dict
 from .reify import reify
 try:
     # python 2
@@ -14,18 +18,7 @@ try:
 except ImportError:
     # python 3
     from gorm import xjson
-import os
 xjpath = os.path.dirname(xjson.__file__)
-alchemyIntegError = None
-try:
-    from sqlalchemy.exc import IntegrityError as alchemyIntegError
-except ImportError:
-    pass
-
-
-IntegrityError = (
-    alchemyIntegError, sqliteIntegError
-) if alchemyIntegError is not None else sqliteIntegError
 
 
 class GlobalKeyValueStore(MutableMapping):
@@ -66,8 +59,12 @@ class QueryEngine(object):
 
     """
     json_path = xjpath
+    
+    @reify
+    def globl(self):
+        return GlobalKeyValueStore(self)
 
-    def __init__(self, dbstring, connect_args, alchemy, json_dump=None, json_load=None):
+    def __init__(self, dbstring, connect_args, json_dump=None, json_load=None):
         """If ``alchemy`` is True and ``dbstring`` is a legit database URI,
         instantiate an Alchemist and start a transaction with
         it. Otherwise use sqlite3.
@@ -78,118 +75,108 @@ class QueryEngine(object):
 
         """
         dbstring = dbstring or 'sqlite:///:memory:'
-        def alchem_init(dbstring, connect_args):
-            from sqlalchemy import create_engine
-            from sqlalchemy.engine.base import Engine
-            from gorm.alchemy import Alchemist
-            if isinstance(dbstring, Engine):
-                self.engine = dbstring
-            else:
-                self.engine = create_engine(
-                    dbstring,
-                    connect_args=connect_args
-                )
-            self.alchemist = Alchemist(self.engine)
-            self.transaction = self.alchemist.conn.begin()
-
-        def lite_init(dbstring, connect_args):
-            from sqlite3 import connect, Connection
-            from json import loads
-            self.strings = loads(
-                open(self.json_path + '/sqlite.json', 'r').read()
-            )
-            if isinstance(dbstring, Connection):
-                self.connection = dbstring
-            else:
-                if dbstring.startswith('sqlite:'):
-                    slashidx = dbstring.rindex('/')
-                    dbstring = dbstring[slashidx+1:]
-                self.connection = connect(dbstring)
-
-        if alchemy:
-            try:
-                alchem_init(dbstring, connect_args)
-            except ImportError:
-                lite_init(dbstring, connect_args)
+        if isinstance(dbstring, Engine):
+            self.engine = dbstring
         else:
-            lite_init(dbstring, connect_args)
-
+            self.engine = create_engine(
+                dbstring,
+                connect_args=connect_args
+            )
+        self.meta = MetaData(bind=self.engine)
+        self.table = tables_for_meta(self.meta)
+        indices_for_table_dict(self.table)
+        self.conn = self.engine.connect()
+        self.conn.create_all()
         self._branches = {}
+        self._graphs2ins = []
+        self._graphval2ins = []
+        self._nodes2ins = []
+        self._nodeval2ins = []
+        self._edges2ins = []
+        self._edgeval2ins = []
         self.json_dump = json_dump or xjson.json_dump
         self.json_load = json_load or xjson.json_load
 
-    @reify
-    def globl(self):
-        return GlobalKeyValueStore(self)
+    def _flush_insert(self, table, to_ins):
+        table = self.table[table]
+        if getattr(self, to_ins):
+            self.conn.execute(table.insert().with_prefix("OR REPLACE"), getattr(self, to_ins))
+            setattr(self, to_ins, [])
 
-    def sql(self, stringname, *args, **kwargs):
-        """Wrapper for the various prewritten or compiled SQL calls.
+    def flush_graphs(self):
+        self._flush_insert('graphs', '_graphs2ins')
 
-        First argument is the name of the query, either a key in
-        ``gorm.sql.sqlite_strings`` or a method name in
-        ``gorm.alchemy.Alchemist``. The rest of the arguments are
-        parameters to the query.
+    def flush_graph_val(self):
+        self._flush_insert('graph_val', '_graphval2ins')
 
-        """
-        if hasattr(self, 'alchemist'):
-            return getattr(self.alchemist, stringname)(*args, **kwargs)
-        else:
-            s = self.strings[stringname]
-            return self.connection.cursor().execute(
-                s.format(**kwargs) if kwargs else s, args
-            )
+    def flush_nodes(self):
+        self._flush_insert('nodes', '_nodes2ins')
+
+    def flush_node_val(self):
+        self._flush_insert('node_val', '_nodeval2ins')
+
+    def flush_edges(self):
+        self._flush_insert('edges', '_edges2ins')
+
+    def flush_edge_val(self):
+        self._flush_insert('edge_val', '_edgeval2ins')
+
+    def flush(self):
+        self.flush_graphs()
+        self.flush_graph_val()
+        self.flush_nodes()
+        self.flush_node_val()
+        self.flush_edges()
+        self.flush_edge_val()
 
     def timestream_data(self):
-        for row in self.sql('allbranch'):
+        branches = self.table['branches']
+        for row in self.conn.execute(
+            select([branches.c.branch, branches.c.parent, branches.c.parent_rev])
+        ):
             yield tuple(row)
-
-    def active_branches(self, branch, rev):
-        """Yield a series of ``(branch, rev)`` pairs, starting with the
-        ``branch`` and ``rev`` provided; proceeding to the parent
-        branch and the revision therein when the provided branch
-        began; and recursing through the entire genealogy of branches
-        until we reach the branch 'master'.
-
-        Though not private, this is a utility function that is
-        unlikely to be useful unless you're adding functionality to
-        gorm.
-
-        """
-        yield (branch, rev)
-        while branch != 'master':
-            if branch not in self._branches:
-                (b, r) = self.parparrev(branch)
-                self._branches[branch] = (b, self.json_load(r))
-            (branch, rev) = self._branches[branch]
-            yield (branch, rev)
 
     def have_graph(self, graph):
         """Return whether I have a graph by this name."""
         graph = self.json_dump(graph)
-        return bool(self.sql('ctgraph', graph).fetchone()[0])
+        graphs = self.table['graphs']
+        return bool(self.engine.execute(select([
+            func.COUNT(graphs.c.graph)
+        ]).where(graphs.c.graph == graph)).scalar())
 
     def new_graph(self, graph, typ):
         """Declare a new graph by this name of this type."""
-        graph = self.json_dump(graph)
-        return self.sql('new_graph', graph, typ)
+        table = self.table['graph']
+        return self.conn.execute(
+            table.insert().values(graph=self.json_dump(graph), type=typ)
+        )
 
     def del_graph(self, graph):
         """Delete all records to do with the graph"""
         g = self.json_dump(graph)
-        self.sql('del_edge_val_graph', g)
-        self.sql('del_edge_graph', g)
-        self.sql('del_node_val_graph', g)
-        self.sql('del_edge_val_graph', g)
-        self.sql('del_graph', g)
+        edge_val = self.table['edge_val']
+        self.conn.execute(edge_val.delete().where(edge_val.c.graph == g))
+        edge = self.table['edges']
+        self.conn.execute(edge.delete().where(edge.c.graph == g))
+        node_val = self.table['node_val']
+        self.conn.execute(node_val.delete().where(node_val.c.graph == g))
+        node = self.table['nodes']
+        self.conn.execute(node.delete().where(node.c.graph == g))
+        graph = self.table['graphs']
+        self.conn.execute(graph.delete().where(graph.c.graph == g))
 
     def graph_type(self, graph):
         """What type of graph is this?"""
-        graph = self.json_dump(graph)
-        return self.sql('graph_type', graph).fetchone()[0]
+        g = self.json_dump(graph)
+        graph = self.table['graphs']
+        return self.conn.execute(select([graph.c.type]).where(graph.c.graph == g)).scalar()
 
     def have_branch(self, branch):
         """Return whether the branch thus named exists in the database."""
-        return bool(self.sql('ctbranch', branch).fetchone()[0])
+        branches = self.table['branches']
+        return bool(self.conn.execute(
+            select([func.COUNT(branches.c.branch)]).where(branches.c.branch == branch)
+        ).scalar())
 
     def all_branches(self):
         """Return all the branch data in tuples of (branch, parent,

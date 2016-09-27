@@ -324,23 +324,6 @@ def queries_for_table_dict(table):
         )
 
     return {
-        'ctbranch': select(
-            [func.COUNT(table['branches'].c.branch)]
-        ).where(
-            table['branches'].c.branch == bindparam('branch')
-        ),
-        'ctgraph': select(
-            [func.COUNT(table['graphs'].c.graph)]
-        ).where(
-            table['graphs'].c.graph == bindparam('graph')
-        ),
-        'allbranch': select(
-            [
-                table['branches'].c.branch,
-                table['branches'].c.parent,
-                table['branches'].c.parent_rev
-            ]
-        ),
         'global_get': select(
             [table['global'].c.value]
         ).where(
@@ -378,10 +361,6 @@ def queries_for_table_dict(table):
         'ctglobal': select(
             [func.COUNT(table['global'].c.key)]
         ),
-        'new_graph': table['graphs'].insert().values(
-            graph=bindparam('graph'),
-            type=bindparam('type')
-        ),
         'graph_type': select(
             [table['graphs'].c.type]
         ).where(
@@ -395,17 +374,8 @@ def queries_for_table_dict(table):
         'del_edge_val_graph': table['edge_val'].delete().where(
             table['edge_val'].c.graph == bindparam('graph')
         ),
-        'del_edge_graph': table['edges'].delete().where(
-            table['edges'].c.graph == bindparam('graph')
-        ),
         'del_node_val_graph': table['node_val'].delete().where(
             table['node_val'].c.graph == bindparam('graph')
-        ),
-        'del_node_graph': table['nodes'].delete().where(
-            table['nodes'].c.graph == bindparam('graph')
-        ),
-        'del_graph': table['graphs'].delete().where(
-            table['graphs'].c.graph == bindparam('graph')
         ),
         'parrev': select(
             [table['branches'].c.parent_rev]
@@ -742,49 +712,3 @@ def queries_for_table_dict(table):
             )
         )
     }
-
-
-def compile_sql(dialect, meta):
-    r = {}
-    table = tables_for_meta(meta)
-    index = indices_for_table_dict(table)
-    query = queries_for_table_dict(table)
-
-    for t in table.values():
-        r['create_' + t.name] = CreateTable(t).compile(dialect=dialect)
-    for (tab, idx) in index.items():
-        r['index_' + tab] = CreateIndex(idx).compile(dialect=dialect)
-    for (name, q) in query.items():
-        r[name] = q.compile(dialect=dialect)
-
-    return r
-
-
-class Alchemist(object):
-    """Holds an engine and runs queries on it.
-
-    """
-    def __init__(self, engine):
-        self.engine = engine
-        self.conn = self.engine.connect()
-        self.meta = MetaData()
-        self.sql = compile_sql(self.engine.dialect, self.meta)
-        def caller(k, *largs):
-            statement = self.sql[k]
-            if hasattr(statement, 'positiontup'):
-                return self.conn.execute(statement, **dict(zip(statement.positiontup, largs)))
-            elif largs:
-                raise TypeError("{} is a DDL query, I think".format(k))
-            return self.conn.execute(statement)
-        for (key, query) in self.sql.items():
-            setattr(self, key, partial(caller, key))
-
-
-if __name__ == '__main__':
-    e = create_engine('sqlite:///:memory:')
-    out = dict(
-        (k, str(v)) for (k, v) in
-        compile_sql(e.dialect, MetaData()).items()
-    )
-
-    print(dumps(out, indent=4, sort_keys=True))
