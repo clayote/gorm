@@ -190,9 +190,10 @@ class ORM(object):
                         rv=currev
                     )
                 )
-        self.db.globl['branch'] = v
         if self.caching:
             self._obranch = v
+        else:
+            self.db.globl['branch'] = v
 
     @property
     def rev(self):
@@ -221,16 +222,23 @@ class ORM(object):
                     "occurs before the start of "
                     "the branch {brnch}".format(revn=v, brnch=branch)
                 )
-        self.db.globl['rev'] = v
         if self.caching:
             self._orev = v
+        else:
+            self.db.globl['rev'] = v
 
     def commit(self):
         """Alias of ``self.db.commit``"""
+        if self.caching:
+            self.db.globl['branch'] = self._obranch
+            self.db.globl['rev'] = self._orev
         self.db.commit()
 
     def close(self):
         """Alias of ``self.db.close``"""
+        if self.caching:
+            self.db.globl['branch'] = self._obranch
+            self.db.globl['rev'] = self._orev
         self.db.close()
 
     def initdb(self):
