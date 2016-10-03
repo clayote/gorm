@@ -75,6 +75,8 @@ def json_load(s,  hint=True):
 
 
 class JSONWrapper(MutableMapping):
+    __slots__ = ['outer', 'outkey']
+
     def __init__(self, outer, outkey):
         self.outer = outer
         self.outkey = outkey
@@ -149,6 +151,8 @@ class JSONListWrapper(JSONWrapper):
 
 class JSONReWrapper(MutableMapping):
     """Like JSONWrapper with a cache."""
+    __slots__ = ['_outer', '_key', '_inner', '_v']
+
     def __init__(self, outer, key, initval):
         self._outer = outer
         self._key = key
@@ -195,6 +199,8 @@ class JSONReWrapper(MutableMapping):
 
 class JSONListReWrapper(MutableSequence):
     """Like JSONListWrapper with a cache."""
+    __slots__ = ['_inner', '_v']
+
     def __init__(self, outer, key, initval=None):
         self._inner = JSONListWrapper(outer, key)
         self._v = initval
