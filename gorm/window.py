@@ -53,6 +53,8 @@ class WindowDict(MutableMapping):
     Optimized for the cases where you look up the same revision repeatedly, or its neighbors.
     
     """
+    __slots__ = ['_past', '_future']
+
     def seek(self, rev):
         """Arrange the caches in the optimal way for looking up the given revision."""
         # TODO: binary search? Perhaps only when one or the other deque is very large?
