@@ -67,6 +67,8 @@ class AbstractEntityMapping(NeatMapping):
                         continue
                     try:
                         v = self._cache[k][branch][rev]
+                        if self.gorm.branch not in self._cache[k]:
+                            self._cache[k][self.gorm.branch][self.gorm.rev] = v
                         if v is not None:
                             yield k
                         break
@@ -87,7 +89,10 @@ class AbstractEntityMapping(NeatMapping):
                 if branch not in self._cache[k]:
                     continue
                 try:
-                    return self._cache[k][branch][rev] is not None
+                    v = self._cache[k][branch][rev]
+                    if self.gorm.branch not in self._cache[k]:
+                        self._cache[k][self.gorm.branch][self.gorm.rev] = v
+                    return v is not None
                 except KeyError:
                     continue
             return False
@@ -119,10 +124,12 @@ class AbstractEntityMapping(NeatMapping):
 
         if self.gorm.caching:
             for (branch, rev) in self.gorm._active_branches():
-                if branch not in self._cache[key    ]:
+                if branch not in self._cache[key]:
                     continue
                 try:
                     r = self._cache[key][branch][rev]
+                    if self.gorm.branch not in self._cache[key]:
+                        self._cache[key][self.gorm.branch][self.gorm.rev] = r
                     if r is None:
                         raise KeyError("key {} is not set now".format(key))
                     return wrapval(r)
@@ -328,7 +335,10 @@ class GraphNodeMapping(NeatMapping):
                 if branch not in cache:
                     continue
                 try:
-                    return cache[branch][rev]
+                    v = cache[branch][rev]
+                    if self.gorm.branch not in cache:
+                        cache[self.gorm.branch][self.gorm.rev] = v
+                    return v
                 except KeyError:
                     continue
             return False
@@ -398,7 +408,7 @@ class GraphNodeMapping(NeatMapping):
         """
         if not hasattr(other, 'keys'):
             return False
-        if set(self.keys()) != set(other.keys()):
+        if self.keys() != other.keys():
             return False
         for k in self.keys():
             if dict(self[k]) != dict(other[k]):
@@ -428,10 +438,9 @@ class GraphEdgeMapping(NeatMapping):
         """
         if not hasattr(other, 'keys'):
             return False
-        myks = set(self.keys())
-        if myks != set(other.keys()):
+        if self.keys() != other.keys():
             return False
-        for k in myks:
+        for k in self.keys():
             if dict(self[k]) != dict(other[k]):
                 return False
         return True
@@ -460,7 +469,10 @@ class AbstractSuccessors(GraphEdgeMapping):
                     for (branch, rev) in self.gorm._active_branches():
                         if branch in cache[nodeB][idx]:
                             try:
-                                if cache[nodeB][idx][branch][rev]:
+                                v = cache[nodeB][idx][branch][rev]
+                                if self.gorm.branch not in cache[nodeB][idx]:
+                                    cache[nodeB][idx][self.gorm.branch][self.gorm.rev] = v
+                                if v:
                                     yield nodeB
                                 seen = True
                                 break
@@ -483,7 +495,10 @@ class AbstractSuccessors(GraphEdgeMapping):
                     if branch not in cache[idx]:
                         continue
                     try:
-                        return cache[idx][branch][rev]
+                        ret = cache[idx][branch][rev]
+                        if self.gorm.branch not in cache[idx]:
+                            cache[idx][self.gorm.branch][self.gorm.rev] = ret
+                        return ret
                     except KeyError:
                         continue
             return False
@@ -609,7 +624,10 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                         if branch not in cache[nodeA][nodeB][idx]:
                             continue
                         try:
-                            if cache[nodeA][nodeB][idx][branch][rev]:
+                            v = cache[nodeA][nodeB][idx][branch][rev]
+                            if self.gorm.branch not in cache[nodeA][nodeB][idx]:
+                                cache[nodeA][nodeB][idx][self.gorm.branch][self.gorm.rev] = v
+                            if v:
                                 return True
                         except KeyError:
                             continue
@@ -674,7 +692,10 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                             if branch not in cache[nodeA][self.nodeB][idx]:
                                 continue
                             try:
-                                if cache[nodeA][self.nodeB][idx][branch][rev]:
+                                v = cache[nodeA][self.nodeB][idx][branch][rev]
+                                if self.gorm.branch not in cache[nodeA][self.nodeB][idx]:
+                                    cache[nodeA][self.nodeB][idx][self.gorm.branch][self.gorm.rev] = v
+                                if v:
                                     yield nodeA
                                 seen = True
                                 break
@@ -697,7 +718,10 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                         if branch not in cache:
                             continue
                         try:
-                            if cache[branch][rev]:
+                            v = cache[branch][rev]
+                            if self.gorm.branch not in cache:
+                                cache[self.gorm.branch][self.gorm.rev] = v
+                            if v:
                                 return True
                         except KeyError:
                             continue
@@ -775,7 +799,10 @@ class MultiEdges(GraphEdgeMapping):
                     if branch not in cache[idx]:
                         continue
                     try:
-                        if cache[idx][branch][rev]:
+                        v = cache[idx][branch][rev]
+                        if self.gorm.branch not in cache[idx]:
+                            cache[idx][self.gorm.branch][self.gorm.rev] = v
+                        if v:
                             yield idx
                         break
                     except KeyError:
@@ -803,7 +830,10 @@ class MultiEdges(GraphEdgeMapping):
                 if branch not in cache:
                     continue
                 try:
-                    return cache[branch][rev]
+                    v = cache[branch][rev]
+                    if self.gorm.branch not in cache:
+                        cache[self.gorm.branch][self.gorm.rev] = v
+                    return v
                 except KeyError:
                     continue
             return False
@@ -944,7 +974,10 @@ class GormGraph(object):
                     if branch not in cache[node]:
                         continue
                     try:
-                        if cache[node][branch][rev]:
+                        v = cache[node][branch][rev]
+                        if self.gorm.branch not in cache[node]:
+                            cache[node][self.gorm.branch][self.gorm.rev] = v
+                        if v:
                             yield node
                         break
                     except KeyError:
