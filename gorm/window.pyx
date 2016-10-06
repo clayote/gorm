@@ -1,55 +1,9 @@
-from collections import deque, KeysView, ItemsView, ValuesView
-        
-class WindowDictItemsView(ItemsView):
-    def __contains__(self, item):
-        cdef int rev, zeroth_past, zeroth_future
-        (rev, v) = item
-        if len(self._mapping._past) > 0:
-            zeroth_past = self._mapping._past[0][0]
-            if rev < zeroth_past:
-                return False
-        elif len(self._mapping._future) > 0:
-            zeroth_future = self._mapping._future[0][0]
-            if rev < zeroth_future:
-                return False
-        else:
-            return False
-        for zeroth_past, mv in self._mapping._past:
-            if zeroth_past == rev:
-                return mv == v
-        for zeroth_past, mv in self._mapping._future:
-            if zeroth_past == rev:
-                return mv == v
-        return False
-
-    def __iter__(self):
-        yield from self._mapping._past
-        yield from self._mapping._future
-
-
-class WindowDictValuesView(ValuesView):
-    def __contains__(self, value):
-        for rev, v in self._mapping._past:
-            if v == value:
-                return True
-        for rev, v in self._mapping._future:
-            if v == value:
-                return True
-        return False
-
-    def __iter__(self):
-        for rev, v in self._mapping._past:
-            yield v
-        for rev, v in self._mapping._future:
-            yield v
-
-
 cdef class QueueEntry:
-    cdef public int rev
-    cdef public object value
+    cdef readonly int rev
+    cdef readonly object value
     cdef QueueEntry prev, next
 
-    def __init__(self, int rev, object value, QueueEntry prev=None, QueueEntry next=None):
+    def __cinit__(self, int rev, object value, QueueEntry prev=None, QueueEntry next=None):
         self.rev = rev
         self.value = value
         self.prev = prev
@@ -74,7 +28,7 @@ cdef class QueueEntry:
 cdef class Queue:
     cdef QueueEntry head, tail
 
-    def __init__(self, QueueEntry head=None, QueueEntry tail=None):
+    def __cinit__(self, QueueEntry head=None, QueueEntry tail=None):
         self.head = head
         self.tail = tail
 
@@ -149,12 +103,11 @@ cdef class Queue:
             entry = entry.next
             yield entry
 
-    def clear(self):
+    cdef clear(self):
         self.head = None
         self.tail = None
 
-    def append(self, int rev, object value):
-        cdef QueueEntry new_entry = QueueEntry(rev, value, self.tail)
+    cdef appendentry(self, QueueEntry new_entry):
         if self.tail is not None:
             self.tail.next = new_entry
             new_entry.prev = self.tail
@@ -162,8 +115,11 @@ cdef class Queue:
             self.head = new_entry
         self.tail = new_entry
 
-    def appendleft(self, int rev, object value):
-        cdef QueueEntry new_entry = QueueEntry(rev, value, None, self.head)
+    cdef append(self, int rev, object value):
+        cdef QueueEntry new_entry = QueueEntry(rev, value, self.tail)
+        self.appendentry(new_entry)
+
+    cdef appendleftentry(self, QueueEntry new_entry):
         if self.head is not None:
             self.head.prev = new_entry
             new_entry.next = self.head
@@ -171,7 +127,11 @@ cdef class Queue:
             self.tail = new_entry
         self.head = new_entry
 
-    def _pop_left(self):
+    cdef appendleft(self, int rev, object value):
+        cdef QueueEntry new_entry = QueueEntry(rev, value, None, self.head)
+        self.appendleftentry(new_entry)
+
+    cdef QueueEntry _pop_left(self):
         cdef QueueEntry entry = self.head
         if entry is None:
             raise IndexError("pop from empty queue")
@@ -182,22 +142,22 @@ cdef class Queue:
             self.head.prev = None
         return entry
 
-    def popleft(self, int i=0):
+    cdef QueueEntry popleft(self, int i=0):
         cdef Queue popped
         if i > 0:
             popped = Queue()
             while i > 0:
-                popped.append(self.popleft())
+                popped.appendentry(self.popleft())
                 i -= 1
             ret = popped.pop()
-            while popped.tail is not None:
-                self.appendleft(popped.pop())
+            while popped.next is not None:
+                self.appendleftentry(popped.pop())
             return ret
         elif i < 0:
             return self.pop(i)
         return self._pop_left()
 
-    def _pop(self):
+    cdef QueueEntry _pop(self):
         cdef QueueEntry entry = self.tail
         if entry is None:
             raise IndexError("pop from empty queue")
@@ -208,20 +168,104 @@ cdef class Queue:
             self.tail.next = None
         return entry
 
-    def pop(self, int i=-1):
+    cdef QueueEntry pop(self, int i=-1):
         cdef Queue popped
         if i > -1:
             return self.popleft(i)
         elif i < -1:
             popped = Queue()
             while i < -1:
-                popped.append(self.pop())
+                popped.appendentry(self.pop())
                 i += 1
             ret = popped.pop()
-            while popped.tail is not None:
-                self.append(popped.pop())
+            while popped.next is not None:
+                self.appendentry(popped.pop())
             return ret
         return self._pop()
+
+    cdef QueueEntry peek(self):
+        return self.tail
+
+    cdef QueueEntry peekleft(self):
+        return self.head
+
+
+cdef class KeysView:
+    cdef Queue _past, _future
+    
+    def __cinit__(self, Queue past, Queue future):
+        self._past = past
+        self._future = future
+
+    def __iter__(self):
+        for item in self._past:
+            yield item.rev
+        for item in self._future:
+            yield item.rev
+    
+    def __len__(self):
+        return len(self._past) + len(self._future)
+
+    def __contains__(self, int rev):
+        for item in self._past:
+            if item.rev == rev:
+                return True
+        for item in self._future:
+            if item.rev == rev:
+                return True
+        return False
+
+
+cdef class ItemsView:
+    cdef Queue _past, _future
+    
+    def __cinit__(self, Queue past, Queue future):
+        self._past = past
+        self._future = future
+
+    def __iter__(self):
+        yield from self._past
+        yield from self._future
+
+    def __len__(self):
+        return len(self._past) + len(self._future)
+
+    def __contains__(self, item):
+        if isinstance(item, QueueEntry):
+            return item in self._past or item in self._future
+        for record in self._past:
+            if record == item:
+                return True
+        for record in self._future:
+            if record == item:
+                return True
+        return False
+
+
+cdef class ValuesView:
+    cdef Queue _past, _future
+    
+    def __cinit__(self, Queue past, Queue future):
+        self._past = past
+        self._future = future
+
+    def __iter__(self):
+        for item in self._past:
+            yield item.value
+        for item in self._future:
+            yield item.value
+
+    def __len__(self):
+        return len(self._past) + len(self._future)
+
+    def __contains__(self, v):
+        for item in self._past:
+            if item.value == v:
+                return True
+        for item in self._future:
+            if item.value == v:
+                return True
+        return False
 
 
 cdef class WindowDict:
@@ -235,9 +279,9 @@ cdef class WindowDict:
     Optimized for the cases where you look up the same revision repeatedly, or its neighbors.
     
     """
-    cdef public Queue _past, _future
+    cdef Queue _past, _future
 
-    def seek(self, int rev):
+    cpdef void seek(self, int rev):
         """Arrange the caches in the optimal way for looking up the given revision."""
         # TODO: binary search? Perhaps only when one or the other deque is very large?
         cdef int chkrev
@@ -254,35 +298,35 @@ cdef class WindowDict:
                 break
             self._past.append(chkrev, v)
 
-    def rev_before(self, int rev):
+    cpdef int rev_before(self, int rev):
         """Return the last rev prior to the given one on which the value changed."""
         self.seek(rev)
         if len(self._past) == 0:
             raise KeyError
         return self._past[-1].rev
 
-    def rev_after(self, int rev):
+    cpdef int rev_after(self, int rev):
         """Return the next rev after the given one on which the value will change, or None if it never will."""
         self.seek(rev)
         if len(self._future) > 0:
             return self._future[0].rev
 
-    def keys(self):
-        return KeysView(self)
+    cpdef KeysView keys(self):
+        return KeysView(self._past, self._future)
 
-    def items(self):
-        return WindowDictItemsView(self)
+    cpdef ItemsView items(self):
+        return ItemsView(self._past, self._future)
 
-    def values(self):
-        return WindowDictValuesView(self)
+    cpdef ValuesView values(self):
+        return ValuesView(self._past, self._future)
 
-    def get(self, int rev, default=None):
+    cpdef object get(self, int rev, object default=None):
         try:
             return self[rev]
         except KeyError:
             return default
 
-    def setdefault(self, int rev, default=None):
+    cpdef object setdefault(self, int rev, object default=None):
         try:
             return self[rev]
         except KeyError:
@@ -300,16 +344,16 @@ cdef class WindowDict:
         for k, v in F.items():
             self[k] = v
 
-    def clear(self):
+    cpdef void clear(self):
         self._past.clear()
         self._future.clear()
 
-    def pop(self, int rev):
+    cpdef object pop(self, int rev):
         ret = self[rev]
         del self[rev]
         return ret
 
-    def popitem(self, int rev):
+    cpdef tuple popitem(self, int rev):
         v = self[rev]
         del self[rev]
         return rev, v
@@ -321,28 +365,56 @@ cdef class WindowDict:
         self._future = Queue()
 
     def __iter__(self):
-        for (rev, v) in self._past:
-            yield rev
-        for (rev, v) in self._future:
-            yield rev
+        for record in self._past:
+            yield record.rev
+        for record in self._future:
+            yield record.rev
 
     def __contains__(self, int item):
         cdef int rev
-        for rev, v in self._mapping._past:
+        for rev, v in self._past:
             if rev == item:
                 return True
-        for rev, v in self._mapping._future:
+        for rev, v in self._future:
             if rev == item:
                 return True
         return False
 
     def __richcmp__(self, WindowDict other, int op):
+        cdef Queue myhist, yourhist
+        cdef QueueEntry myrec, yourrec
         if op not in (2, 3):
             raise TypeError
+        myhist = Queue()
+        yourhist = Queue()
+        for record in self._past:
+            myhist.appendentry(record)
+        for record in self._future:
+            myhist.appendentry(record)
+        for record in other._past:
+            yourhist.appendentry(record)
+        for record in other._future:
+            yourhist.appendentry(record)
         if op == 2:
-            return self._past + self._future == other._past + other._future
+            while myhist.head is not None:
+                if yourhist.head is None:
+                    return False
+                myrec = myhist.popleft()
+                yourrec = yourhist.popleft()
+                if myrec != yourrec:
+                    return False
+            return yourhist.head is None
         if op == 3:
-            return self._past + self._future != other._past + other._future
+            if myhist.head != yourhist.head or myhist.tail != yourhist.tail:
+                return True
+            while myhist.head is not None:
+                if yourhist.head is None:
+                    return True
+                myrec = myhist.popleft()
+                yourrec = yourhist.popleft()
+                if myrec != yourrec:
+                    return True
+            return yourhist.head is not None
 
     def __len__(self):
         return len(self._past) + len(self._future)
@@ -354,8 +426,8 @@ cdef class WindowDict:
         except IndexError:
             raise KeyError
 
-    def __setitem__(self, int rev, v):
-        cdef pastrev
+    def __setitem__(self, int rev, object v):
+        cdef int pastrev
         if len(self._past) == 0 and len(self._future) == 0:
             self._past.append(rev, v)
         self.seek(rev)
@@ -370,15 +442,18 @@ cdef class WindowDict:
             self._past.append(rev, v)
     
     def __delitem__(self, int rev):
+        cdef QueueEntry nothing = QueueEntry(rev, None)
+        cdef QueueEntry tmp
         while len(self._past) > 0:
-            self._future.appendleft(*self._past.pop())
+            tmp = self._past.pop()
+            self._future.appendleftentry(tmp)
         while len(self._future) > 0:
-            frev, v = self._future.popleft()
-            if frev >= rev:
-                self._past.append(rev, None)
+            tmp = self._future.popleft()
+            if tmp.rev >= rev:
+                self._past.appendentry(nothing)
                 self._future.clear()
-                return
-            self._past.append(frev, v)
+                break
+            self._past.appendentry(tmp)
 
     def __repr__(self):
         return "WindowDict({})".format(repr(dict(self)))
