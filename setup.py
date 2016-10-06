@@ -1,4 +1,6 @@
 from setuptools import setup
+from setuptools.extension import Extension
+from Cython.Build import cythonize
 setup(
     name = "gorm",
     version = "0.10.0",
@@ -10,6 +12,7 @@ setup(
     license = "BSD",
     keywords = "orm graph networkx sql database",
     url = "https://github.com/LogicalDash/gorm",
+    ext_modules=cythonize(["gorm/window.pyx"]),
     package_dir={
         "gorm": "gorm"
     },
