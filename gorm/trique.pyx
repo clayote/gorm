@@ -66,8 +66,8 @@ cdef class Trique:
             self.waist = self.head
         elif i <= -1:
             self.waist = self.tail
-        if i not in (0, -1):
-            self.seek(i)
+            i += 1
+        self.seek(i)
         return self.waist
 
     def __getitem__(self, int i=0):
