@@ -90,7 +90,10 @@ class WindowDict(MutableMapping):
 
     def __getitem__(self, rev):
         self.seek(rev)
-        return self.history.middle
+        ret = self.history.middle[1]
+        if ret is None:
+            raise KeyError("Set, then deleted")
+        return ret
 
     def __setitem__(self, rev, v):
         self.seek(rev)
