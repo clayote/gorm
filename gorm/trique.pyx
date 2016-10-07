@@ -23,9 +23,9 @@ cdef class Trique:
     def __len__(self):
         return self.length
 
-    cdef seek(self, int n=0):
+    cdef TriqueEntry seekentry(self, int n=0):
         if n == 0:
-            return
+            return self.waist
         if self.waist is None:
             if self.head is None:
                 raise IndexError("nothing to seek through")
@@ -40,6 +40,10 @@ cdef class Trique:
                 raise IndexError("seek past start of trique")
             self.waist = self.waist.prev
             n += 1
+        return self.waist
+
+    cpdef object seek(self, int n=0):
+        return self.seekentry(n).value
     
     cdef appendentry(self, TriqueEntry entry):
         if self.head is None:
@@ -69,15 +73,15 @@ cdef class Trique:
     cpdef appendleft(self, object value):
         self.appendleftentry(TriqueEntry(value))
 
-    cdef TriqueEntry popentry(self):
+    cdef TriqueEntry poprightentry(self):
         cdef TriqueEntry ret = self.tail
         if self.tail.prev is None:
             self.head = self.tail = None
         else:
             self.tail = self.tail.prev
-        self.length -= 1
         if ret is self.waist:
             self.waist = self.waist.prev or self.waist.next
+        self.length -= 1
         return ret
 
     cdef TriqueEntry popleftentry(self):
@@ -86,9 +90,9 @@ cdef class Trique:
             self.head = self.tail = None
         else:
             self.head = ret.next
-        self.length -= 1
         if ret is self.waist:
             self.waist = self.waist.next or self.waist.prev
+        self.length -= 1
         return ret
 
     cdef TriqueEntry popentry(self, int i=-1):
@@ -96,7 +100,7 @@ cdef class Trique:
         if i == 0:
             return self.popleftentry()
         elif i == -1:
-            return self.popentry()
+            return self.poprightentry()
         elif i > 0:
             self.waist = self.head
             self.seek(i)
@@ -114,3 +118,21 @@ cdef class Trique:
 
     cpdef object pop(self, int i=-1):
         return self.popentry(i).value
+
+    cpdef object popleft(self):
+        return self.popleftentry().value
+
+    cdef TriqueEntry popmiddleentry(self, int n=0):
+        cdef TriqueEntry ret, prev, nxt
+        if n != 0:
+            self.seek(n)
+        ret = self.waist
+        prev = self.waist.prev
+        nxt = self.waist.next
+        prev.next = nxt
+        nxt.prev = prev
+        self.length -= 1
+        return ret
+
+    cpdef object popmiddle(self, int n=0):
+        return self.popmiddleentry(n).value
