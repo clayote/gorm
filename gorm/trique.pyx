@@ -14,6 +14,8 @@ cdef class Trique:
 
     @property
     def middle(self):
+        if self.waist is None:
+            return None
         return self.waist.value
 
     def __cinit__(self, list data=[]):
