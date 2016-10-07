@@ -12,7 +12,7 @@ setup(
     license = "BSD",
     keywords = "orm graph networkx sql database",
     url = "https://github.com/LogicalDash/gorm",
-    ext_modules=cythonize(["gorm/window.pyx"]),
+    ext_modules=cythonize(["gorm/trique.pyx"]),
     package_dir={
         "gorm": "gorm"
     },
