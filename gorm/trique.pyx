@@ -17,8 +17,7 @@ cdef class Trique:
         self.head = None
         self.waist = None
         self.tail = None
-        for datum in data:
-            self.append(datum)
+        self.extend(data)
 
     def __len__(self):
         return self.length
@@ -58,6 +57,23 @@ cdef class Trique:
 
     cpdef append(self, object value):
         self.appendentry(TriqueEntry(value))
+
+    cpdef extend(self, object iterable):
+        cdef TriqueEntry nxt, prev
+        for obj in iterable:
+            if nxt is None:
+                prev = TriqueEntry(obj, self.tail)
+                if self.head is None:
+                    self.head = self.tail = prev
+            else:
+                nxt = TriqueEntry(obj, prev)
+                prev.next = nxt
+        if nxt is None:
+            return
+        if prev is None:
+            self.appendentry(prev)
+        else:
+            self.tail = nxt
 
     cdef appendleftentry(self, TriqueEntry entry):
         if self.head is None:
