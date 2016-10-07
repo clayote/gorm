@@ -18,6 +18,11 @@ cdef class Trique:
             return None
         return self.waist.value
 
+    @middle.setter
+    def middle(self, object v):
+        if self.waist is None:
+        self.waist.value = v
+
     def __cinit__(self, list data=[]):
         self.length = 0
         self.head = None
