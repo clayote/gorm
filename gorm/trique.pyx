@@ -73,6 +73,50 @@ cdef class Trique:
     def __getitem__(self, int i=0):
         return self.getentry(i).value
 
+    def __setitem__(self, int i, object v):
+        if i == self.length:
+            self.append(v)
+        elif i > self.length:
+            raise IndexError("Set past end of trique")
+        elif i == 0:
+            if self.length == 0:
+                self.append(v)
+            else:
+                self.head.value = v
+        elif i == -1 or i == self.length - 1:
+            if self.length == 0:
+                self.append(v)
+            else:
+                self.tail.value = v
+        else:
+            if i > 0:
+                self.waist = self.head
+            else:  # i < 0
+                self.waist = self.tail
+                i += 1
+            self.seek(i)
+            self.waist.value = v
+
+    def __delitem__(self, int i):
+        if i == 0:
+            self.head = self.head.next
+            self.head.prev = None
+        elif i == -1 or i == self.length - 1:
+            self.tail = self.tail.prev
+            self.tail.next = None
+        elif i >= self.length:
+            raise IndexError("del past end of trique")
+        else:
+            if i > 0:
+                self.waist = self.head
+            else:  # i < 0
+                self.waist = self.tail
+                i += 1
+            self.seek(i)
+            self.waist.prev.next = self.waist.next
+            self.waist.next.prev = self.waist.prev
+            self.waist = self.waist.prev
+
     cdef appendentry(self, TriqueEntry entry):
         if self.head is None:
             entry.next = entry.prev = None
@@ -114,6 +158,24 @@ cdef class Trique:
         self.head.prev = entry
         self.head = entry
         self.length += 1
+
+    cdef insertmiddleentry(self, TriqueEntry entry):
+        cdef TriqueEntry nxt = self.waist.next
+        self.waist.next = entry
+        nxt.prev = entry
+        entry.prev = self.waist
+        entry.next = nxt
+        self.waist = entry
+
+    cpdef insertmiddle(self, object v):
+        cdef TriqueEntry newentry = TriqueEntry(v, self.waist, self.waist.next)
+        self.waist.next.prev = newentry
+        self.waist.next = newentry
+        self.waist = newentry
+
+    cpdef insert(self, int i, object v):
+        self.seek(i)
+        self.insertmiddle(v)
 
     cpdef appendleft(self, object value):
         self.appendleftentry(TriqueEntry(value))
