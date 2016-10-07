@@ -120,7 +120,10 @@ cdef class Trique:
     cdef appendentry(self, TriqueEntry entry):
         if self.head is None:
             entry.next = entry.prev = None
-            self.head = self.tail = entry
+            self.head = entry
+            self.waist = entry
+            self.tail = entry
+            self.length += 1
             return
         entry.prev = self.tail
         entry.next = None
