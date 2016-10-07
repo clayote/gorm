@@ -53,7 +53,19 @@ cdef class Trique:
 
     cpdef object seek(self, int n=0):
         return self.seekentry(n).value
-    
+
+    cdef TriqueEntry getentry(self, int i=0):
+        if i >= 0:
+            self.waist = self.head
+        elif i <= -1:
+            self.waist = self.tail
+        if i not in (0, -1):
+            self.seek(i)
+        return self.waist
+
+    def __getitem__(self, int i=0):
+        return self.getentry(i).value
+
     cdef appendentry(self, TriqueEntry entry):
         if self.head is None:
             entry.next = entry.prev = None
