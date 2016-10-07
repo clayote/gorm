@@ -21,6 +21,9 @@ cdef class Trique:
     @middle.setter
     def middle(self, object v):
         if self.waist is None:
+            self.head = self.waist = self.tail = TriqueEntry(v)
+            self.length = 1
+        else:
             self.waist.value = v
 
     def __cinit__(self, list data=[]):
