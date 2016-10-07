@@ -22,6 +22,12 @@ cdef class Trique:
     def __len__(self):
         return self.length
 
+    def __iter__(self):
+        cdef TriqueEntry here = self.head
+        while here is not None:
+            yield here
+            here = here.next
+
     cdef TriqueEntry seekentry(self, int n=0):
         if n == 0:
             return self.waist
