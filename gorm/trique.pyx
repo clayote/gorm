@@ -70,7 +70,7 @@ cdef class Trique:
         self.seek(i)
         return self.waist
 
-    def __getitem__(self, int i=0):
+    def __getitem__(self, int i):
         return self.getentry(i).value
 
     def __setitem__(self, int i, object v):
