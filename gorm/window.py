@@ -96,6 +96,9 @@ class WindowDict(MutableMapping):
         return ret
 
     def __setitem__(self, rev, v):
+        if len(self.history) == 0:
+            self.history.append((rev, v))
+            return
         self.seek(rev)
         if rev == self.history.middle[0]:
             self.history.middle = (rev, v)
