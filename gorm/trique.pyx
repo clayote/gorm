@@ -12,6 +12,10 @@ cdef class Trique:
     cdef TriqueEntry head, waist, tail
     cdef int length
 
+    @property
+    def middle(self):
+        return self.waist.value
+
     def __cinit__(self, list data=[]):
         self.length = 0
         self.head = None
