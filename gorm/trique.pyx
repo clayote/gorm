@@ -132,7 +132,8 @@ cdef class Trique:
         self.appendentry(TriqueEntry(value))
 
     cpdef extend(self, object iterable):
-        cdef TriqueEntry nxt, prev
+        cdef TriqueEntry nxt = None
+        cdef TriqueEntry prev = None
         for obj in iterable:
             if nxt is None:
                 prev = TriqueEntry(obj, self.tail)
