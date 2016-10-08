@@ -39,7 +39,7 @@ cdef class Trique:
     def __iter__(self):
         cdef TriqueEntry here = self.head
         while here is not None:
-            yield here
+            yield here.value
             here = here.next
 
     cdef TriqueEntry seekentry(self, int n=0):
@@ -79,8 +79,8 @@ cdef class Trique:
     def __setitem__(self, int i, object v):
         if i == self.length:
             self.append(v)
-        elif i > self.length:
-            raise IndexError("Set past end of trique")
+        elif abs(i) > self.length:
+            raise IndexError("Set past start/end of trique")
         elif i == 0:
             if self.length == 0:
                 self.append(v)
@@ -96,19 +96,22 @@ cdef class Trique:
                 self.waist = self.head
             else:  # i < 0
                 self.waist = self.tail
-                i += 1
             self.seek(i)
             self.waist.value = v
 
     def __delitem__(self, int i):
-        if i == 0:
+        if self.length == 0:
+            raise IndexError("del from empty trique")
+        elif i == 0:
             self.head = self.head.next
             self.head.prev = None
+            self.length -= 1
         elif i == -1 or i == self.length - 1:
             self.tail = self.tail.prev
             self.tail.next = None
-        elif i >= self.length:
-            raise IndexError("del past end of trique")
+            self.length -= 1
+        elif abs(i) >= self.length:
+            raise IndexError("del past start/end of trique")
         else:
             if i > 0:
                 self.waist = self.head
@@ -119,14 +122,13 @@ cdef class Trique:
             self.waist.prev.next = self.waist.next
             self.waist.next.prev = self.waist.prev
             self.waist = self.waist.prev
+            self.length -= 1
 
     cdef appendentry(self, TriqueEntry entry):
         if self.head is None:
             entry.next = entry.prev = None
-            self.head = entry
-            self.waist = entry
-            self.tail = entry
-            self.length += 1
+            self.head = self.waist = self.tail =entry
+            self.length = 1
             return
         entry.prev = self.tail
         entry.next = None
@@ -138,27 +140,12 @@ cdef class Trique:
         self.appendentry(TriqueEntry(value))
 
     cpdef extend(self, object iterable):
-        cdef TriqueEntry nxt = None
-        cdef TriqueEntry prev = None
         for obj in iterable:
-            if nxt is None:
-                prev = TriqueEntry(obj, self.tail)
-                if self.head is None:
-                    self.head = self.tail = prev
-            else:
-                nxt = TriqueEntry(obj, prev)
-                prev.next = nxt
-        if nxt is None:
-            return
-        if prev is None:
-            self.appendentry(prev)
-        else:
-            self.tail = nxt
+            self.appendentry(TriqueEntry(obj))
 
     cdef appendleftentry(self, TriqueEntry entry):
         if self.head is None:
-            entry.next = entry.prev = None
-            self.head = self.tail = entry
+            self.appendentry(entry)
             return
         entry.next = self.head
         entry.prev = None
@@ -167,20 +154,27 @@ cdef class Trique:
         self.length += 1
 
     cdef insertmiddleentry(self, TriqueEntry entry):
-        cdef TriqueEntry nxt = self.waist.next
+        cdef TriqueEntry nxt
+        if self.length <= 1 or self.waist is self.tail:
+            self.appendentry(entry)
+            self.waist = entry
+            return
+        nxt = self.waist.next
         self.waist.next = entry
         nxt.prev = entry
         entry.prev = self.waist
         entry.next = nxt
         self.waist = entry
+        self.length += 1
 
     cpdef insertmiddle(self, object v):
-        cdef TriqueEntry newentry = TriqueEntry(v, self.waist, self.waist.next)
-        self.waist.next.prev = newentry
-        self.waist.next = newentry
-        self.waist = newentry
+        self.insertmiddleentry(TriqueEntry(v))
 
     cpdef insert(self, int i, object v):
+        if i < 0:
+            self.waist = self.tail
+        else:
+            self.waist = self.head
         self.seek(i)
         self.insertmiddle(v)
 
@@ -188,7 +182,10 @@ cdef class Trique:
         self.appendleftentry(TriqueEntry(value))
 
     cdef TriqueEntry poprightentry(self):
-        cdef TriqueEntry ret = self.tail
+        cdef TriqueEntry ret
+        if self.tail is None:
+            raise IndexError("pop from empty trique")
+        ret = self.tail
         if self.tail.prev is None:
             self.head = self.tail = None
         else:
@@ -199,7 +196,10 @@ cdef class Trique:
         return ret
 
     cdef TriqueEntry popleftentry(self):
-        cdef TriqueEntry ret = self.head
+        cdef TriqueEntry ret
+        if self.head is None:
+            raise IndexError("pop from empty trique")
+        ret = self.head
         if ret.next is None:
             self.head = self.tail = None
         else:
@@ -215,6 +215,8 @@ cdef class Trique:
             return self.popleftentry()
         elif i == -1:
             return self.poprightentry()
+        elif self.length == 0:
+            raise IndexError("pop from empty trique")
         elif i > 0:
             self.waist = self.head
             self.seek(i)
@@ -241,6 +243,8 @@ cdef class Trique:
         if n != 0:
             self.seek(n)
         ret = self.waist
+        if ret is None:
+            raise IndexError("pop from empty trique")
         prev = self.waist.prev
         nxt = self.waist.next
         prev.next = nxt
