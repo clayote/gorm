@@ -40,16 +40,7 @@ class WindowDict(MutableMapping):
 
     def seek(self, rev):
         """Arrange the caches in the optimal way for looking up the given revision."""
-        while self.history.middle[0] > rev:
-            try:
-                self.history.seek(-1)
-            except IndexError:
-                break
-        while self.history.middle[0] < rev:
-            try:
-                self.history.seek(1)
-            except IndexError:
-                return
+        self.history.seekrev(rev)
 
     def rev_before(self, rev):
         """Return the last rev prior to the given one on which the value changed."""
@@ -81,6 +72,8 @@ class WindowDict(MutableMapping):
     def __getitem__(self, rev):
         self.seek(rev)
         mrev, ret = self.history.middle
+        if mrev == 0:
+            assert (mrev, ret) == self.history[0]
         if ret is None:
             raise KeyError("Set, then deleted")
         if mrev > rev:

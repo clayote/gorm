@@ -1,8 +1,10 @@
 cdef class TriqueEntry:
     cdef public TriqueEntry next, prev
     cdef public object value
+    cdef public int rev
     
-    def __cinit__(self, object value, TriqueEntry prev=None, TriqueEntry nxt=None):
+    def __cinit__(self, int rev, object value, TriqueEntry prev=None, TriqueEntry nxt=None):
+        self.rev = rev
         self.value = value
         self.next = nxt
         self.prev = prev
@@ -16,14 +18,16 @@ cdef class Trique:
     def middle(self):
         if self.waist is None:
             return None
-        return self.waist.value
+        return self.waist.rev, self.waist.value
 
     @middle.setter
-    def middle(self, object v):
+    def middle(self, tuple rv):
+        (rev, v) = rv
         if self.waist is None:
-            self.head = self.waist = self.tail = TriqueEntry(v)
+            self.head = self.waist = self.tail = TriqueEntry(rev, v)
             self.length = 1
         else:
+            self.waist.rev = rev
             self.waist.value = v
 
     def __cinit__(self, list data=[]):
@@ -39,7 +43,7 @@ cdef class Trique:
     def __iter__(self):
         cdef TriqueEntry here = self.head
         while here is not None:
-            yield here.value
+            yield here.rev, here.value
             here = here.next
 
     cdef TriqueEntry seekentry(self, int n=0):
@@ -61,8 +65,9 @@ cdef class Trique:
             n += 1
         return self.waist
 
-    cpdef object seek(self, int n=0):
-        return self.seekentry(n).value
+    cpdef tuple seek(self, int n=0):
+        cdef TriqueEntry ret = self.seekentry(n)
+        return ret.rev, ret.value
 
     cdef TriqueEntry getentry(self, int i=0):
         if i >= 0:
@@ -74,30 +79,31 @@ cdef class Trique:
         return self.waist
 
     def __getitem__(self, int i):
-        return self.getentry(i).value
+        cdef TriqueEntry ret = self.getentry(i)
+        return ret.rev, ret.value
 
-    def __setitem__(self, int i, object v):
+    def __setitem__(self, int i, tuple rv):
         if i == self.length:
-            self.append(v)
+            self.append(rv)
         elif abs(i) > self.length:
             raise IndexError("Set past start/end of trique")
         elif i == 0:
             if self.length == 0:
-                self.append(v)
+                self.append(rv)
             else:
-                self.head.value = v
+                self.head.rev, self.head.value = rv
         elif i == -1 or i == self.length - 1:
             if self.length == 0:
-                self.append(v)
+                self.append(rv)
             else:
-                self.tail.value = v
+                self.tail.rev, self.tail.value = rv
         else:
             if i > 0:
                 self.waist = self.head
             else:  # i < 0
                 self.waist = self.tail
             self.seek(i)
-            self.waist.value = v
+            self.waist.rev, self.waist.value = rv
 
     def __delitem__(self, int i):
         if self.length == 0:
@@ -136,12 +142,12 @@ cdef class Trique:
         self.tail = entry
         self.length += 1
 
-    cpdef append(self, object value):
-        self.appendentry(TriqueEntry(value))
+    cpdef append(self, tuple rv):
+        self.appendentry(TriqueEntry(*rv))
 
     cpdef extend(self, object iterable):
-        for obj in iterable:
-            self.appendentry(TriqueEntry(obj))
+        for rev, v in iterable:
+            self.appendentry(TriqueEntry(rev, v))
 
     cdef appendleftentry(self, TriqueEntry entry):
         if self.head is None:
@@ -167,19 +173,19 @@ cdef class Trique:
         self.waist = entry
         self.length += 1
 
-    cpdef insertmiddle(self, object v):
-        self.insertmiddleentry(TriqueEntry(v))
+    cpdef insertmiddle(self, tuple rv):
+        self.insertmiddleentry(TriqueEntry(*rv))
 
-    cpdef insert(self, int i, object v):
+    cpdef insert(self, int i, tuple rv):
         if i < 0:
             self.waist = self.tail
         else:
             self.waist = self.head
         self.seek(i)
-        self.insertmiddle(v)
+        self.insertmiddle(rv)
 
-    cpdef appendleft(self, object value):
-        self.appendleftentry(TriqueEntry(value))
+    cpdef appendleft(self, tuple rv):
+        self.appendleftentry(TriqueEntry(*rv))
 
     cdef TriqueEntry poprightentry(self):
         cdef TriqueEntry ret
@@ -232,11 +238,13 @@ cdef class Trique:
         self.length -= 1
         return ret
 
-    cpdef object pop(self, int i=-1):
-        return self.popentry(i).value
+    cpdef tuple pop(self, int i=-1):
+        cdef TriqueEntry ret = self.popentry(i)
+        return ret.rev, ret.value
 
-    cpdef object popleft(self):
-        return self.popleftentry().value
+    cpdef tuple popleft(self):
+        cdef TriqueEntry ret = self.popleftentry()
+        return ret.rev, ret.value
 
     cdef TriqueEntry popmiddleentry(self, int n=0):
         cdef TriqueEntry ret, prev, nxt
@@ -252,5 +260,20 @@ cdef class Trique:
         self.length -= 1
         return ret
 
-    cpdef object popmiddle(self, int n=0):
-        return self.popmiddleentry(n).value
+    cpdef tuple popmiddle(self, int n=0):
+        cdef TriqueEntry ret = self.popmiddleentry(n)
+        return ret.rev, ret.value
+
+    cpdef seekrev(self, int rev):
+        while self.waist.rev < rev:
+            try:
+                self.seek(1)
+            except IndexError:
+                break
+        while self.waist.rev > rev:
+            try:
+                self.seek(-1)
+            except IndexError:
+                break
+        if self.waist.rev > rev:
+            raise ValueError("Couldn't seek to a rev earlier than {}".format(self.waist.rev))
