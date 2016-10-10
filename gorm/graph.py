@@ -43,6 +43,7 @@ class NeatMapping(MutableMapping):
 
 
 class AbstractEntityMapping(NeatMapping):
+    _contains_cache = defaultdict(dict)
     @property
     def _cache(self):
         """Return a dictionary of dictionaries in which to cache myself by branch and rev."""
@@ -76,7 +77,9 @@ class AbstractEntityMapping(NeatMapping):
                     if branch not in self._cache[k]:
                         continue
                     try:
-                        v = self._cache[k][self.gorm.branch][self.gorm.rev] = self._cache[k][branch][rev]
+                        v = self._cache[k][self.gorm.branch][self.gorm.rev] \
+                          = self._contains_cache[id(self)][(k, self.gorm.branch, self.gorm.rev)] \
+                          = self._cache[k][branch][rev]
                         if v is not None:
                             yield k
                         break
@@ -93,11 +96,13 @@ class AbstractEntityMapping(NeatMapping):
     def __contains__(self, k):
         """Do I have a value for this key right now?"""
         if self.gorm.caching:
+            if (k, self.gorm.branch, self.gorm.rev) in self._contains_cache[id(self)]:
+                return self._contains_cache[id(self)][(k, self.gorm.branch, self.gorm.rev)] is not None
             for (branch, rev) in self.gorm._active_branches():
                 if branch not in self._cache[k]:
                     continue
                 try:
-                    ret = self._cache[k][self.gorm.branch][self.gorm.rev] = self._cache[k][branch][rev]
+                    ret = self._contains_cache[(k, self.gorm.branch, self.gorm.rev)] = self._cache[k][self.gorm.branch][self.gorm.rev] = self._cache[k][branch][rev]
                     return ret is not None
                 except KeyError:
                     continue
@@ -129,16 +134,21 @@ class AbstractEntityMapping(NeatMapping):
                 return v
 
         if self.gorm.caching:
+            if (key, self.gorm.branch, self.gorm.rev) in self._contains_cache[id(self)]:
+                ret = self._contains_cache[id(self)][(key, self.gorm.branch, self.gorm.rev)]
+                if ret is None:
+                    raise KeyError
+                return wrapval(ret)
             for (branch, rev) in self.gorm._active_branches():
                 if branch not in self._cache[key    ]:
                     continue
                 try:
-                    r = self._cache[key][self.gorm.branch][self.gorm.rev] = self._cache[key][branch][rev]
-                    if r is None:
-                        raise KeyError("key {} is not set now".format(key))
-                    return wrapval(r)
+                    r = self._contains_cache[id(self)][(key, self.gorm.branch, self.gorm.rev)] = self._cache[key][self.gorm.branch][self.gorm.rev] = self._cache[key][branch][rev]
                 except KeyError:
                     continue
+                if r is None:
+                    raise KeyError("key {} is not set now".format(key))
+                return wrapval(r)
             raise KeyError("key {} is not set, ever".format(key))
         return wrapval(self._get(key))
 
@@ -148,13 +158,13 @@ class AbstractEntityMapping(NeatMapping):
             raise ValueError("gorm uses None to indicate that a key's been deleted")
         self._set(key, value)
         if self.gorm.caching:
-            self._cache[key][self.gorm.branch][self.gorm.rev] = value
+            self._cache[key][self.gorm.branch][self.gorm.rev] = self._contains_cache[id(self)][(key, self.gorm.branch, self.gorm.rev)] = value
 
     def __delitem__(self, key):
         """Indicate that the key has no value at this time"""
         self._del(key)
         if self.gorm.caching:
-            self._cache[key][self.gorm.branch][self.gorm.rev] = None
+            self._contains_cache[id(self)][(key, self.gorm.branch, self.gorm.rev)] = self._cache[key][self.gorm.branch][self.gorm.rev] = None
 
 
 class GraphMapping(AbstractEntityMapping):
