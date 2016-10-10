@@ -99,7 +99,10 @@ class WindowDict(MutableMapping):
         self.seek(rev)
         if not self._past:
             raise KeyError("Revision {} is before the start of history".format(rev))
-        return self._past[-1][1]
+        ret = self._past[-1][1]
+        if ret is None:
+            raise KeyError("Set, then deleted")
+        return ret
 
     def __setitem__(self, rev, v):
         if not self._past:
