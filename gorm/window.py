@@ -58,6 +58,8 @@ class WindowDict(MutableMapping):
     def seek(self, rev):
         """Arrange the caches in the optimal way for looking up the given revision."""
         # TODO: binary search? Perhaps only when one or the other deque is very large?
+        if self._past and self._future and self._past[-1][0] <= rev < self._future[0][0]:
+            return
         while self._future and self._future[0][0] <= rev:
             self._past.append(self._future.popleft())
         while self._past and self._past[-1][0] > rev:
