@@ -123,16 +123,11 @@ class WindowDict(MutableMapping):
             elif rev > self._future[-1][0]:
                 self._future.append((rev, v))
             else:
-                self._future.append((rev, v))
-                inserted = sorted(self._future)
-                self._future = deque(inserted)
+                self.seek(rev)
+                self._past.append((rev, v))
         else:
-            # I was going to implement my own insertion sort here, but I gather Python already
-            # does that, via Timsort. I wonder if there's a way I can give it a hint, so it doesn't
-            # have to check for partial ordering? And maybe avoid reconstructing the deque?
+            self.seek(rev)
             self._past.append((rev, v))
-            inserted = sorted(self._past)
-            self._past = deque(inserted)
     
     def __delitem__(self, rev):
         name = '_past' if rev <= self._rev else '_future'
