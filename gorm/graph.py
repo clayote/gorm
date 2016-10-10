@@ -48,6 +48,10 @@ class AbstractEntityMapping(NeatMapping):
         """Return a dictionary of dictionaries in which to cache myself by branch and rev."""
         raise NotImplementedError
 
+    @property
+    def gorm(self):
+        return self.graph.gorm
+
     def _keys(self):
         """Return a list of keys from the database (not the cache)."""
         raise NotImplementedError
@@ -158,11 +162,9 @@ class GraphMapping(AbstractEntityMapping):
     @property
     def _cache(self):
         return self.gorm._graph_val_cache[self.graph.name]
-
     def __init__(self, graph):
         """Initialize private dict and store pointers to the graph and ORM"""
         self.graph = graph
-        self.gorm = graph.gorm
 
     def _keys(self):
         """Return keys from the database"""
@@ -210,7 +212,6 @@ class Node(AbstractEntityMapping):
     def __init__(self, graph, node):
         """Store name and graph"""
         self.graph = graph
-        self.gorm = graph.gorm
         self.node = node
 
     def _keys(self):
@@ -263,7 +264,6 @@ class Edge(AbstractEntityMapping):
 
         """
         self.graph = graph
-        self.gorm = graph.gorm
         self.nodeA = nodeA
         self.nodeB = nodeB
         self.idx = idx
@@ -419,6 +419,15 @@ class GraphEdgeMapping(NeatMapping):
     for a graph.
 
     """
+    _metacache = defaultdict(dict)
+
+    @property
+    def _cache(self):
+        return self._metacache[id(self)]
+
+    @property
+    def gorm(self):
+        return self.graph.gorm
 
     def __eq__(self, other):
         """Compare dictified versions of the edge mappings within me.
@@ -579,6 +588,9 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
             else:
                 return (self.nodeA, nodeB)
 
+    def __init__(self, graph):
+        self.graph = graph
+
     def __getitem__(self, nodeA):
         if nodeA not in self:
             raise KeyError("No edges from {}".format(nodeA))
@@ -624,10 +636,12 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
     the nodeB provided to this
 
     """
+    @property
+    def gorm(self):
+        return self.graph.gorm
+
     def __init__(self, graph):
         self.graph = graph
-        self.gorm = graph.gorm
-        self._cache = {}
 
     def __contains__(self, nodeB):
         if self.gorm.caching:
@@ -686,11 +700,13 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
 
     class Predecessors(GraphEdgeMapping):
         """Mapping of Edges that end at a particular node"""
+        @property
+        def graph(self):
+            return self.container.graph
+
         def __init__(self, container, nodeB):
             """Store container and node ID"""
             self.container = container
-            self.graph = container.graph
-            self.gorm = self.graph.gorm
             self.nodeB = nodeB
 
         def __iter__(self):
