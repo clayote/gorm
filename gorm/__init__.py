@@ -58,13 +58,13 @@ class Cache(object):
             if rev not in self.shallow[entity+(branch,)]:
                 for (b, r) in self.gorm._active_branches(branch, rev):
                     if b in self.branches[entity]:
-                        self.shallow[entity+(branch,)][rev] \
-                            = self.shallow[entity+(b,)][r] \
-                            = self.branches[entity][b][r]
+                        self.shallow[entity+(key, branch)][rev] \
+                            = self.shallow[entity+(key, b)][r] \
+                            = self.branches[entity+(key,)][b][r]
                         break
                 else:
-                    self.shallow[entity+(branch,)][rev] = None
-            if self.shallow[entity+(branch,)][rev] is not None:
+                    self.shallow[entity+(key, branch)][rev] = None
+            if self.shallow[entity+(key, branch)][rev] is not None:
                 yield key
     iter_entities = iter_keys = iter_entity_keys = iter_entities_or_keys
 
@@ -88,7 +88,7 @@ class Cache(object):
                 = self.branches[entity+(key,)][branch][rev] \
                 = self.shallow[entity+(key, branch)][rev] \
                 = None
-        return self.shallow[(entity, key, branch)][rev] is not None
+        return self.shallow[entity+(key, branch)][rev] is not None
     contains_entity = contains_key = contains_entity_key = contains_entity_or_key
 
 
