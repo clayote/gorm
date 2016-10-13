@@ -147,3 +147,19 @@ class WindowDict(MutableMapping):
 
     def __repr__(self):
         return "WindowDict({})".format(repr(dict(self)))
+
+
+class WindowDefaultDict(WindowDict):
+    __slots__ = ['_future', '_past', 'cls', 'args_munger', 'kwargs_munger']
+
+    def __init__(self, cls, args_munger=lambda k: tuple(), kwargs_munger=lambda k: {}, data={}):
+        super(WindowDefaultDict, self).__init__(data)
+        self.cls = cls
+        self.args_munger = args_munger
+        self.kwargs_munger = kwargs_munger
+
+    def __getitem__(self, k):
+        if k in self:
+            return super(WindowDefaultDict, self).__getitem__(k)
+        ret = self[k] = self.cls(*self.args_munger(k), **self.kwargs_munger(k))
+        return ret

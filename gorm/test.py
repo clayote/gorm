@@ -76,6 +76,7 @@ class BranchLineageTest(GraphTest):
         self.assertRaises(ValueError, badjump)
         self.engine.rev = 2
         self.engine.branch = 'no_edge'
+        self.assertIn(0, list(g.node.keys()))
         self.assertNotIn(1, g.edge[0])
         self.assertRaises(KeyError, lambda: g.edge[0][1])
         self.engine.branch = 'triangle'

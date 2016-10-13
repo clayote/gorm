@@ -1,7 +1,7 @@
 # This file is part of gorm, an object relational mapper for versioned graphs.
 # Copyright (C) 2014 Zachary Spector.
 from collections import defaultdict, deque
-from .pickydict import StructuredDefaultDict
+from .pickydict import PickyDefaultDict, StructuredDefaultDict
 from .graph import (
     Graph,
     DiGraph,
@@ -17,61 +17,97 @@ class GraphNameError(KeyError):
     pass
 
 
+class Cache(object):
+    def __init__(self, gorm):
+        self.gorm = gorm
+        self.parents = StructuredDefaultDict(3, WindowDict)
+        self.keys = StructuredDefaultDict(2, WindowDict)
+        self.branches = StructuredDefaultDict(1, WindowDict)
+        self.shallow = PickyDefaultDict(WindowDict)
+
+    def store(self, *args):
+        entity, key, branch, rev, value = args[-5:]
+        parent = args[:-5]
+        if parent:
+            self.parents[parent][entity][key][branch][rev] = value
+        self.keys[parent+(entity,)][key][branch][rev] = value
+        self.branches[parent+(entity,key)][branch][rev] = value
+        self.shallow[parent+(entity,key,branch)][rev] = value
+
+    def retrieve(self, *args):
+        entity = args[:-2]
+        branch, rev = args[-2:]
+        if rev not in self.shallow[entity+(branch,)]:
+            for (b, r) in self.gorm._active_branches(branch, rev):
+                if b in self.branches[entity]:
+                    self.shallow[entity+(branch,)][rev] \
+                        = self.shallow[entity+(b,)][r] \
+                        = self.branches[entity][b][r]
+                    break
+            else:
+                self.shallow[entity+(branch,)][rev] = None
+        ret = self.shallow[entity+(branch,)][rev]
+        if ret is None:
+            raise KeyError()
+        return ret
+
+    def iter_entities_or_keys(self, *args):
+        entity = args[:-2]
+        branch, rev = args[-2:]
+        for key in self.keys[entity]:
+            if rev not in self.shallow[entity+(branch,)]:
+                for (b, r) in self.gorm._active_branches(branch, rev):
+                    if b in self.branches[entity]:
+                        self.shallow[entity+(branch,)][rev] \
+                            = self.shallow[entity+(b,)][r] \
+                            = self.branches[entity][b][r]
+                        break
+                else:
+                    self.shallow[entity+(branch,)][rev] = None
+            if self.shallow[entity+(branch,)][rev] is not None:
+                yield key
+    iter_entities = iter_keys = iter_entity_keys = iter_entities_or_keys
+
+    def contains_entity_or_key(self, *args):
+        entity = args[:-3]
+        key, branch, rev = args[-3:]
+        if key not in self.keys[entity]:
+            return False
+        if branch not in self.branches[entity+(key,)]:
+            for (b, r) in self.gorm._active_branches(branch, rev):
+                if b in self.keys[entity][key]:
+                    self.keys[entity][key][branch][rev] \
+                        = self.branches[entity+(key,)][branch][rev] \
+                        = self.branches[entity+(key,)][b][r] \
+                        = self.shallow[entity+(key, branch)][rev] \
+                        = self.shallow[entity+(key, b)][r] \
+                        = self.keys[entity][key][b][r]
+                    break
+            else:
+                self.keys[entity][key][branch][rev] \
+                = self.branches[entity+(key,)][branch][rev] \
+                = self.shallow[entity+(key, branch)][rev] \
+                = None
+        return self.shallow[(entity, key, branch)][rev] is not None
+    contains_entity = contains_key = contains_entity_key = contains_entity_or_key
+
+
+class EdgesCache(Cache):
+    def __init__(self, gorm):
+        Cache.__init__(self, gorm)
+        self.predecessors = StructuredDefaultDict(3, WindowDict)
+
+    def store(self, graph, nodeA, nodeB, idx, branch, rev, ex):
+        Cache.store(self, graph, nodeA, nodeB, idx, branch, rev, ex)
+        self.predecessors[(graph, nodeB)][nodeA][idx][branch][rev] = ex
+
+
 class ORM(object):
     """Instantiate this with the same string argument you'd use for a
     SQLAlchemy ``create_engine`` call. This will be your interface to
     gorm.
 
     """
-    @reify
-    def _graph_val_cache(self):
-        assert(self.caching)
-        # graph: key: branch: rev: value
-        r = StructuredDefaultDict(2, WindowDict)
-        for (graph, key, branch, rev, value) in self.db.graph_val_dump():
-            r[graph][key][branch][rev] = value
-        return r
-
-    @reify
-    def _node_val_cache(self):
-        assert(self.caching)
-        # graph: node: key: branch: rev: value
-        r = StructuredDefaultDict(3, WindowDict)
-        for (graph, node, key, branch, rev, value) in self.db.node_val_dump():
-            r[graph][node][key][branch][rev] = value
-        return r
-
-    @reify
-    def _nodes_cache(self):
-        assert(self.caching)
-        # graph: node: branch: rev: extant
-        r = StructuredDefaultDict(2, WindowDict)
-        for (graph, node, branch, rev, extant) in self.db.nodes_dump():
-            r[graph][node][branch][rev] = extant
-        return r
-
-    @reify
-    def _edge_val_cache(self):
-        assert(self.caching)
-        # graph: nodeA: nodeB: idx: key: branch: rev: value
-        r = StructuredDefaultDict(5, WindowDict)
-        for (
-                graph, nodeA, nodeB, idx, key, branch, rev, value
-        ) in self.db.edge_val_dump():
-            r[graph][nodeA][nodeB][idx][key][branch][rev] = value
-        return r
-
-    @reify
-    def _edges_cache(self):
-        assert self.caching
-        # graph: nodeA: nodeB: idx: branch: rev: extant
-        r = StructuredDefaultDict(4, WindowDict)
-        for (
-                graph, nodeA, nodeB, idx, branch, rev, extant
-        ) in self.db.edges_dump():
-            r[graph][nodeA][nodeB][idx][branch][rev] = extant
-        return r
-
     def __init__(
             self,
             dbstring,
@@ -91,14 +127,14 @@ class ORM(object):
         self._orev = None
         self.db.initdb()
         # I will be recursing a lot so just cache all the branch info
-        self._childbranch = defaultdict(set)
-        self._parentbranch_rev = {}
-        for (branch, parent, parent_rev) in self.db.all_branches():
-            if branch != 'master':
-                self._parentbranch_rev[branch] = (parent, parent_rev)
-            self._childbranch[parent].add(branch)
         if caching:
             self.caching = True
+            self._childbranch = defaultdict(set)
+            self._parentbranch_rev = {}
+            for (branch, parent, parent_rev) in self.db.all_branches():
+                if branch != 'master':
+                    self._parentbranch_rev[branch] = (parent, parent_rev)
+                self._childbranch[parent].add(branch)
             self.graph = {}
             for (graph, typ) in self.db.graphs_types():
                 self.graph[graph] = {
@@ -121,6 +157,21 @@ class ORM(object):
                     self._childbranch[parent].add(branch)
                 else:
                     todo.append(working)
+            self._graph_val_cache = Cache(self)
+            for row in self.db.graph_val_dump():
+                self._graph_val_cache.store(*row)
+            self._node_val_cache = Cache(self)
+            for row in self.db.node_val_dump():
+                self._node_val_cache.store(*row)
+            self._nodes_cache = Cache(self)
+            for row in self.db.nodes_dump():
+                self._nodes_cache.store(*row)
+            self._edge_val_cache = Cache(self)
+            for row in self.db.edge_val_dump():
+                self._edge_val_cache.store(*row)
+            self._edges_cache = EdgesCache(self)
+            for row in self.db.edges_dump():
+                self._edges_cache.store(*row)
 
     def __enter__(self):
         """Enable the use of the ``with`` keyword"""
@@ -187,7 +238,7 @@ class ORM(object):
                     "Tried to jump to branch {br}, which starts at revision {rv}. "
                     "Go to rev {rv} or later to use this branch.".format(
                         br=v,
-                        rv=currev
+                        rv=parrev
                     )
                 )
         if self.caching:
