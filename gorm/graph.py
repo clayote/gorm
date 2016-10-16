@@ -985,7 +985,9 @@ class GormGraph(object):
 
     def nodes(self):
         if self.gorm.caching:
-            return self.gorm._nodes_cache.iter_entities(self._name, self.gorm.branch, self.gorm.rev)
+            for n in self.gorm._nodes_cache.iter_entities(self._name, self.gorm.branch, self.gorm.rev):
+                yield n
+            return
         else:
             for node in self.gorm.db.nodes_extant(
                 self._name, self.gorm.branch, self.gorm.rev
