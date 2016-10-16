@@ -86,12 +86,21 @@ class Cache(object):
     contains_entity = contains_key = contains_entity_key = contains_entity_or_key
 
 
+class NodesCache(Cache):
+    def store(self, graph, node, branch, rev, ex):
+        if not ex:
+            ex = None
+        Cache.store(self, graph, node, branch, rev, ex)
+
+
 class EdgesCache(Cache):
     def __init__(self, gorm):
         Cache.__init__(self, gorm)
         self.predecessors = StructuredDefaultDict(3, WindowDict)
 
     def store(self, graph, nodeA, nodeB, idx, branch, rev, ex):
+        if not ex:
+            ex = None
         Cache.store(self, graph, nodeA, nodeB, idx, branch, rev, ex)
         self.predecessors[(graph, nodeB)][nodeA][idx][branch][rev] = ex
 
@@ -157,7 +166,7 @@ class ORM(object):
             self._node_val_cache = Cache(self)
             for row in self.db.node_val_dump():
                 self._node_val_cache.store(*row)
-            self._nodes_cache = Cache(self)
+            self._nodes_cache = NodesCache(self)
             for row in self.db.nodes_dump():
                 self._nodes_cache.store(*row)
             self._edge_val_cache = Cache(self)
