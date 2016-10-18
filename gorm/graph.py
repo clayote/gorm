@@ -469,6 +469,11 @@ class GraphEdgeMapping(NeatMapping):
 
 
 class AbstractSuccessors(GraphEdgeMapping):
+    _metacache = defaultdict(dict)
+    @property
+    def _cache(self):
+        return self._metacache[(self.graph.name, self.nodeA)]
+
     def __init__(self, container, nodeA):
         """Store container and node"""
         self.container = container
