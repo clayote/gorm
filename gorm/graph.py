@@ -693,7 +693,7 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                         for (branch, rev) in self.gorm._active_branches():
                             if branch in cache[nodeA][idx]:
                                 v = cache[nodeA][idx][branch][rev]
-                                self.gorm._edges_cache.remember(self.graph.name, nodeA, self.nodeB, idx, branch, rev, v)
+                                self.gorm._edges_cache.store(self.graph.name, nodeA, self.nodeB, idx, branch, rev, v)
                                 if v:
                                     yield nodeA
                                 seen = True
