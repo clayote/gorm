@@ -145,6 +145,7 @@ class GraphMapping(AbstractEntityMapping):
         return self.gorm._graph_val_cache.retrieve(
             self.graph.name, key, self.gorm.branch, self.gorm.rev
         )
+    _get = _get_cache
 
     def _set_db(self, key, value):
         """Set key=value in the database (not the cache)"""
