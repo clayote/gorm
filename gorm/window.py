@@ -105,7 +105,7 @@ class WindowDict(MutableMapping):
         return ret
 
     def __setitem__(self, rev, v):
-        if not self._past:
+        if not self._past and not self._future:
             self._past.append((rev, v))
         elif rev < self._past[0][0]:
             self._past.appendleft((rev, v))
