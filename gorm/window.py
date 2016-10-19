@@ -58,6 +58,8 @@ class WindowDict(MutableMapping):
     def seek(self, rev):
         """Arrange the caches in the optimal way for looking up the given revision."""
         # TODO: binary search? Perhaps only when one or the other deque is very large?
+        if self._past and self._future and self._past[-1][0] <= rev < self._future[0][0]:
+            return
         while self._future and self._future[0][0] <= rev:
             self._past.append(self._future.popleft())
         while self._past and self._past[-1][0] > rev:
@@ -97,7 +99,10 @@ class WindowDict(MutableMapping):
         self.seek(rev)
         if not self._past:
             raise KeyError("Revision {} is before the start of history".format(rev))
-        return self._past[-1][1]
+        ret = self._past[-1][1]
+        if ret is None:
+            raise KeyError("Set, then deleted")
+        return ret
 
     def __setitem__(self, rev, v):
         if not self._past:
@@ -118,16 +123,11 @@ class WindowDict(MutableMapping):
             elif rev > self._future[-1][0]:
                 self._future.append((rev, v))
             else:
-                self._future.append((rev, v))
-                inserted = sorted(self._future)
-                self._future = deque(inserted)
+                self.seek(rev)
+                self._past.append((rev, v))
         else:
-            # I was going to implement my own insertion sort here, but I gather Python already
-            # does that, via Timsort. I wonder if there's a way I can give it a hint, so it doesn't
-            # have to check for partial ordering? And maybe avoid reconstructing the deque?
+            self.seek(rev)
             self._past.append((rev, v))
-            inserted = sorted(self._past)
-            self._past = deque(inserted)
     
     def __delitem__(self, rev):
         name = '_past' if rev <= self._rev else '_future'

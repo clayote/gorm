@@ -3,12 +3,18 @@
 import networkx
 from networkx.exception import NetworkXError
 from collections import MutableMapping, defaultdict
+from operator import attrgetter
 from .xjson import (
     JSONWrapper,
     JSONListWrapper,
     JSONReWrapper,
     JSONListReWrapper
 )
+
+
+def getatt(attribute_name):
+    """An easy way to make an alias"""
+    return property(attrgetter(attribute_name))
 
 
 class NeatMapping(MutableMapping):
@@ -41,6 +47,7 @@ class AbstractEntityMapping(NeatMapping):
         raise NotImplementedError
 
     def _iter_keys_cache(self):
+
         raise NotImplementedError
 
     def _get_db(self, key):
@@ -104,7 +111,6 @@ class AbstractEntityMapping(NeatMapping):
         self._set_db(key, value)
         if self.gorm.caching:
             self._set_cache(key, value)
- 
     def __delitem__(self, key):
         """Indicate that the key has no value at this time"""
         self._del_db(key)
@@ -117,7 +123,6 @@ class GraphMapping(AbstractEntityMapping):
     def __init__(self, graph):
         """Initialize private dict and store pointers to the graph and ORM"""
         self.graph = graph
-        self.gorm = graph.gorm
 
     def _iter_keys_db(self):
         """Return keys from the database"""
@@ -179,7 +184,6 @@ class Node(AbstractEntityMapping):
     def __init__(self, graph, node):
         """Store name and graph"""
         self.graph = graph
-        self.gorm = graph.gorm
         self.node = node
 
     def _iter_keys_db(self):
@@ -248,7 +252,6 @@ class Edge(AbstractEntityMapping):
 
         """
         self.graph = graph
-        self.gorm = graph.gorm
         self.nodeA = nodeA
         self.nodeB = nodeB
         self.idx = idx
@@ -439,11 +442,15 @@ class GraphEdgeMapping(NeatMapping):
     for a graph.
 
     """
-    def __init__(self, graph):
-        """Store the graph"""
-        self.graph = graph
-        self.gorm = graph.gorm
-        self._cache = {}
+    _metacache = defaultdict(dict)
+
+    @property
+    def _cache(self):
+        return self._metacache[id(self)]
+
+    @property
+    def gorm(self):
+        return self.graph.gorm
 
     def __eq__(self, other):
         """Compare dictified versions of the edge mappings within me.
@@ -469,16 +476,17 @@ class GraphEdgeMapping(NeatMapping):
 
 
 class AbstractSuccessors(GraphEdgeMapping):
+    graph = getatt('container.graph')
+    gorm = getatt('container.graph.gorm')
     _metacache = defaultdict(dict)
+
     @property
     def _cache(self):
-        return self._metacache[(self.graph.name, self.nodeA)]
+        return self._metacache[id(self)]
 
     def __init__(self, container, nodeA):
         """Store container and node"""
         self.container = container
-        self.graph = container.graph
-        self.gorm = self.graph.gorm
         self.nodeA = nodeA
 
     def __iter__(self):
@@ -525,11 +533,18 @@ class AbstractSuccessors(GraphEdgeMapping):
             n += 1
         return n
 
+    def _make_edge(self, nodeB):
+        return Edge(self.graph, self.nodeA, nodeB)
+
     def __getitem__(self, nodeB):
         """Get the edge between my nodeA and the given node"""
         if nodeB not in self:
             raise KeyError("No edge {}->{}".format(self.nodeA, nodeB))
-        return Edge(self.graph, self.nodeA, nodeB)
+        if self.gorm.caching:
+            if nodeB not in self._cache:
+                self._cache[nodeB] = self._make_edge(nodeB)
+            return self._cache[nodeB]
+        return self._make_edge(nodeB)
 
     def __setitem__(self, nodeB, value):
         """Set the edge between my nodeA and the given nodeB to the given
@@ -596,23 +611,32 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
             else:
                 return (self.nodeA, nodeB)
 
+    def __init__(self, graph):
+        self.graph = graph
+
     def __getitem__(self, nodeA):
         if nodeA not in self:
             raise KeyError("No edges from {}".format(nodeA))
-        return self.Successors(self, nodeA)
+        if nodeA not in self._cache:
+            self._cache[nodeA] = self.Successors(self, nodeA)
+        return self._cache[nodeA]
 
     def __setitem__(self, nodeA, val):
         """Wipe out any edges presently emanating from nodeA and replace them
         with those described by val
 
         """
-        sucs = self.Successors(self, nodeA)
+        if nodeA in self:
+            sucs = self[nodeA]
+        else:
+            sucs = self._cache[nodeA] = self.Successors(self, nodeA)
         sucs.clear()
         sucs.update(val)
 
     def __delitem__(self, nodeA):
         """Wipe out edges emanating from nodeA"""
-        self.Successors(self, nodeA).clear()
+        self[nodeA].clear()
+        del self._cache[nodeA]
 
     def __iter__(self):
         return iter(self.graph.node)
@@ -646,7 +670,9 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
         """
         if nodeB not in self:
             raise KeyError("No edges available")
-        return self.Predecessors(self, nodeB)
+        if nodeB not in self._cache:
+            self._cache[nodeB] = self.Predecessors(self, nodeB)
+        return self._cache[nodeB]
 
     def _getpreds(self, nodeB):
         cache = self._predcache[id(self)]
@@ -672,11 +698,13 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
 
     class Predecessors(GraphEdgeMapping):
         """Mapping of Edges that end at a particular node"""
+        @property
+        def graph(self):
+            return self.container.graph
+
         def __init__(self, container, nodeB):
             """Store container and node ID"""
             self.container = container
-            self.graph = container.graph
-            self.gorm = self.graph.gorm
             self.nodeB = nodeB
 
         def __iter__(self):
@@ -734,6 +762,9 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
                 n += 1
             return n
 
+        def _make_edge(self, nodeA):
+            return Edge(self.graph, nodeA, self.nodeB)
+
         def __getitem__(self, nodeA):
             """Get the edge from the given node to mine"""
             return self.graph.adj[nodeA][self.nodeB]
@@ -743,17 +774,20 @@ class DiGraphPredecessorsMapping(GraphEdgeMapping):
             given node to mine.
 
             """
-            self.gorm.db.exist_edge(
-                self.graph.name,
-                nodeA,
-                self.nodeB,
-                0,
-                self.gorm.branch,
-                self.gorm.rev,
-                True
-            )
-            e = self._getsub(nodeA)
-            e.clear()
+            try:
+                e = self[nodeA]
+                e.clear()
+            except KeyError:
+                self.gorm.db.exist_edge(
+                    self.graph.name,
+                    nodeA,
+                    self.nodeB,
+                    0,
+                    self.gorm.branch,
+                    self.gorm.rev,
+                    True
+                )
+                e = self._make_edge(nodeA)
             e.update(value)
             if self.gorm.caching:
                 self.gorm._edges_cache.store(self.graph.name, nodeA, self.nodeB, 0, self.gorm.branch, self.gorm.rev, True)
