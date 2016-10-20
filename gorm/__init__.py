@@ -22,6 +22,7 @@ class Cache(object):
         self.gorm = gorm
         self.parents = StructuredDefaultDict(3, WindowDict)
         self.keys = StructuredDefaultDict(2, WindowDict)
+        self.keycache = PickyDefaultDict(WindowDict)
         self.branches = StructuredDefaultDict(1, WindowDict)
         self.shallow = PickyDefaultDict(WindowDict)
 
@@ -33,6 +34,13 @@ class Cache(object):
         self.keys[parent+(entity,)][key][branch][rev] = value
         self.branches[parent+(entity,key)][branch][rev] = value
         self.shallow[parent+(entity,key,branch)][rev] = value
+        if rev in self.keycache[parent+(entity,branch)]:
+            if not self.keycache[parent+(entity,branch)].has_exact_rev(rev):
+                self.keycache[parent+(entity,branch)][rev] = self.keycache[parent+(entity,branch)].copy()
+            if value is None:
+                self.keycache[parent+(entity, branch)][rev].remove(key)
+            else:
+                self.keycache[parent+(entity, branch)][rev].add(key)
 
     def retrieve(self, *args):
         entity = args[:-3]
@@ -46,26 +54,20 @@ class Cache(object):
                     break
             else:
                 self.store(*entity+(key, branch, rev, None))
-        ret = self.shallow[entity+(key, branch)][rev]
-        if ret is None:
-            raise KeyError()
-        return ret
+        return self.shallow[entity+(key, branch)][rev]
 
     def iter_entities_or_keys(self, *args):
         entity = args[:-2]
         branch, rev = args[-2:]
+        if rev in self.keycache[entity+(branch,)]:
+            yield from self.keycache[entity+(branch,)][rev]
+            return
+        keys2cache = set()
         for key in self.keys[entity]:
-            if rev not in self.shallow[entity+(key, branch)]:
-                for (b, r) in self.gorm._active_branches(branch, rev):
-                    if b in self.branches[entity+(key,)]:
-                        v = self.branches[entity+(key,)][b][r]
-                        self.store(*entity+(key, branch, rev, v))
-                        self.store(*entity+(key, b, r, v))
-                        break
-                else:
-                    self.store(*entity+(key, branch, rev, None))
-            if self.shallow[entity+(key, branch)][rev] is not None:
+            if self.contains_entity_or_key(*entity+(key, branch, rev)):
                 yield key
+                keys2cache.add(key)
+        self.keycache[entity+(branch,)][rev] = keys2cache
     iter_entities = iter_keys = iter_entity_keys = iter_entities_or_keys
 
     def contains_entity_or_key(self, *args):
@@ -73,16 +75,18 @@ class Cache(object):
         key, branch, rev = args[-3:]
         if key not in self.keys[entity]:
             return False
+        if rev in self.keycache[entity+(branch,)]:
+            return key in self.keycache[entity+(branch,)][rev]
         if branch not in self.branches[entity+(key,)]:
             for (b, r) in self.gorm._active_branches(branch, rev):
                 if b in self.keys[entity][key]:
-                    v = self.keys[entity][key][b][r]
+                    v = self.keys[entity][key][b].get(r, None)
                     self.store(*entity+(key, b, r, v))
                     self.store(*entity+(key, branch, rev, v))
                     break
             else:
                 self.store(*entity+(key, branch, rev, None))
-        return self.shallow[entity+(key, branch)][rev] is not None
+        return rev in self.shallow[entity+(key,branch)]
     contains_entity = contains_key = contains_entity_key = contains_entity_or_key
 
 
