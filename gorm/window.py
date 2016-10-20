@@ -65,6 +65,11 @@ class WindowDict(MutableMapping):
         while self._past and self._past[-1][0] > rev:
             self._future.appendleft(self._past.pop())
 
+    def has_exact_rev(self, rev):
+        """Return whether I have a value at this exact revision, not just a previous one."""
+        self.seek(rev)
+        return self._past and self._past[-1][0] == rev
+
     def rev_before(self, rev):
         """Return the last rev prior to the given one on which the value changed."""
         self.seek(rev)
