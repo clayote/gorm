@@ -120,6 +120,7 @@ class AbstractEntityMapping(NeatMapping):
 
 class GraphMapping(AbstractEntityMapping):
     """Mapping for graph attributes"""
+    gorm = getatt('graph.gorm')
     def __init__(self, graph):
         """Initialize private dict and store pointers to the graph and ORM"""
         self.graph = graph
@@ -180,6 +181,7 @@ class GraphMapping(AbstractEntityMapping):
 
 class Node(AbstractEntityMapping):
     """Mapping for node attributes"""
+    gorm = getatt('graph.gorm')
 
     def __init__(self, graph, node):
         """Store name and graph"""
@@ -245,6 +247,8 @@ class Node(AbstractEntityMapping):
 
 class Edge(AbstractEntityMapping):
     """Mapping for edge attributes"""
+    gorm = getatt('graph.gorm')
+
     def __init__(self, graph, nodeA, nodeB, idx=0):
         """Store the graph, the names of the nodes, and the index.
 
