@@ -456,6 +456,9 @@ class GraphEdgeMapping(NeatMapping):
     def gorm(self):
         return self.graph.gorm
 
+    def __init__(self, graph):
+        self.graph = graph
+
     def __eq__(self, other):
         """Compare dictified versions of the edge mappings within me.
 
@@ -614,9 +617,6 @@ class GraphSuccessorsMapping(GraphEdgeMapping):
                 return (nodeB, self.nodeA)
             else:
                 return (self.nodeA, nodeB)
-
-    def __init__(self, graph):
-        self.graph = graph
 
     def __getitem__(self, nodeA):
         if nodeA not in self:
