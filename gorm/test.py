@@ -29,18 +29,36 @@ class GraphTest(GormTest):
         super().setUp()
         g = self.engine.new_graph('test')
         g.add_node(0)
+        self.assertIn(0, g)
         g.add_node(1)
+        self.assertIn(1, g)
         g.add_edge(0, 1)
+        self.assertIn(1, g.adj[0])
+        self.assertIn(0, g.adj[1])
+        # TODO: test adding edges whose nodes do not yet exist
         self.engine.rev = 1
+        self.assertIn(0, g)
+        self.assertIn(1, g)
         self.engine.branch = 'no_edge'
+        self.assertIn(0, g)
+        self.assertIn(1, g)
+        self.assertIn(1, g.adj[0])
+        self.assertIn(0, g.adj[1])
         g.remove_edge(0, 1)
+        self.assertIn(0, g)
+        self.assertIn(1, g)
+        self.assertNotIn(0, g.adj[1])
+        self.assertNotIn(1, g.adj[0])
         self.engine.branch = 'triangle'
         g.add_node(2)
+        self.assertIn(2, g)
         g.add_edge(0, 1)
         g.add_edge(1, 2)
         g.add_edge(2, 0)
         self.engine.branch = 'square'
         self.engine.rev = 2
+        self.assertIn(2, g)
+        self.assertIn(2, list(g.node.keys()))
         g.remove_edge(2, 0)
         g.add_node(3)
         g.add_edge(2, 3)
@@ -76,6 +94,7 @@ class BranchLineageTest(GraphTest):
         self.assertRaises(ValueError, badjump)
         self.engine.rev = 2
         self.engine.branch = 'no_edge'
+        self.assertIn(0, g)
         self.assertIn(0, list(g.node.keys()))
         self.assertNotIn(1, g.edge[0])
         self.assertRaises(KeyError, lambda: g.edge[0][1])
