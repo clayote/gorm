@@ -174,12 +174,14 @@ class FuturistWindowDict(WindowDict):
     def __setitem__(self, rev, v):
         if not self._past and not self._future:
             self._past.append((rev, v))
+            return
         if self._future:
             self.seek(rev)
         if self._future:
             raise ValueError("Already have some history after {}".format(rev))
         if not self._past or rev > self._past[-1][0]:
-            self._past.append(rev, v)
+            self._past.append((rev, v))
         elif rev == self._past[-1][0]:
             self._past[-1] = (rev, v)
-        raise ValueError("Already have some history after {} (and my seek function is broken?)".format(rev))
+        else:
+            raise ValueError("Already have some history after {} (and my seek function is broken?)".format(rev))
