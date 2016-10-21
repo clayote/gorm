@@ -10,7 +10,7 @@ from .graph import (
 )
 from .query import QueryEngine
 from .reify import reify
-from .window import WindowDict
+from .window import FuturistWindowDict
 
 
 class GraphNameError(KeyError):
@@ -20,11 +20,11 @@ class GraphNameError(KeyError):
 class Cache(object):
     def __init__(self, gorm):
         self.gorm = gorm
-        self.parents = StructuredDefaultDict(3, WindowDict)
-        self.keys = StructuredDefaultDict(2, WindowDict)
-        self.keycache = PickyDefaultDict(WindowDict)
-        self.branches = StructuredDefaultDict(1, WindowDict)
-        self.shallow = PickyDefaultDict(WindowDict)
+        self.parents = StructuredDefaultDict(3, FuturistWindowDict)
+        self.keys = StructuredDefaultDict(2, FuturistWindowDict)
+        self.keycache = PickyDefaultDict(FuturistWindowDict)
+        self.branches = StructuredDefaultDict(1, FuturistWindowDict)
+        self.shallow = PickyDefaultDict(FuturistWindowDict)
 
     def store(self, *args):
         entity, key, branch, rev, value = args[-5:]
@@ -100,7 +100,7 @@ class NodesCache(Cache):
 class EdgesCache(Cache):
     def __init__(self, gorm):
         Cache.__init__(self, gorm)
-        self.predecessors = StructuredDefaultDict(3, WindowDict)
+        self.predecessors = StructuredDefaultDict(3, FuturistWindowDict)
 
     def store(self, graph, nodeA, nodeB, idx, branch, rev, ex):
         if not ex:
