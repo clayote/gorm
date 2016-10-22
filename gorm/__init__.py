@@ -36,11 +36,13 @@ class Cache(object):
         self.shallow[parent+(entity,key,branch)][rev] = value
         if rev in self.keycache[parent+(entity,branch)]:
             if not self.keycache[parent+(entity,branch)].has_exact_rev(rev):
-                self.keycache[parent+(entity,branch)][rev] = self.keycache[parent+(entity,branch)].copy()
+                self.keycache[parent+(entity,branch)][rev] = self.keycache[parent+(entity,branch)][rev].copy()
             if value is None:
                 self.keycache[parent+(entity, branch)][rev].remove(key)
             else:
                 self.keycache[parent+(entity, branch)][rev].add(key)
+        else:
+            self.keycache[parent+(entity,branch)][rev] = set([key])
 
     def retrieve(self, *args):
         entity = args[:-3]
