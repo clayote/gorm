@@ -16,6 +16,19 @@ def getatt(attribute_name):
     """An easy way to make an alias"""
     return property(attrgetter(attribute_name))
 
+def convert_to_networkx_graph(data,create_using=None,multigraph_input=False):
+    if isinstance(data, GormGraph):
+        result = networkx.convert.from_dict_of_dicts(
+            data.adj,
+            create_using=create_using,
+            multigraph_input=data.is_multigraph()
+        )
+        result.graph = dict(data.graph)
+        result.node = {k: dict(v) for k, v in data.node.items()}
+        return result
+    return networkx.convert.to_networkx_graph(data, create_using, multigraph_input)
+
+
 
 class NeatMapping(MutableMapping):
     def clear(self):
@@ -1115,7 +1128,7 @@ class DiGraph(GormGraph, networkx.DiGraph):
         self._name = name
         self.gorm = gorm
         if data is not None:
-            networkx.convert.to_networkx_graph(data, create_using=self)
+            convert_to_networkx_graph(data, create_using=self)
         self.graph.update(attr)
 
     def remove_edge(self, u, v):
