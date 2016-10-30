@@ -7,7 +7,6 @@ doesn't pollute the other files so much.
 """
 from collections import MutableMapping
 from sqlite3 import IntegrityError as sqliteIntegError
-from .reify import reify
 try:
     # python 2
     import xjson
@@ -114,6 +113,7 @@ class QueryEngine(object):
         else:
             lite_init(dbstring, connect_args)
 
+        self.globl = GlobalKeyValueStore(self)
         self._branches = {}
         self._nodevals2set = []
         self._edgevals2set = []
@@ -122,10 +122,6 @@ class QueryEngine(object):
         self._edges2set = []
         self.json_dump = json_dump or xjson.json_dump
         self.json_load = json_load or xjson.json_load
-
-    @reify
-    def globl(self):
-        return GlobalKeyValueStore(self)
 
     def sql(self, stringname, *args, **kwargs):
         """Wrapper for the various prewritten or compiled SQL calls.

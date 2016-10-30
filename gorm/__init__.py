@@ -9,7 +9,6 @@ from .graph import (
     MultiDiGraph,
 )
 from .query import QueryEngine
-from .reify import reify
 from .window import FuturistWindowDict
 
 
@@ -45,7 +44,7 @@ class Cache(object):
             self.keycache[parent+(entity,branch)] = kc
         if rev in kc:
             if not kc.has_exact_rev(rev):
-                kc[rev] = self.keycache[parent+(entity,branch)][rev].copy()
+                kc[rev] = kc[rev].copy()
             if value is None:
                 kc[rev].discard(key)
             else:
@@ -424,4 +423,4 @@ class ORM(object):
                 yield child
 
 
-__all__ = [ORM, 'alchemy', 'graph', 'query', 'reify', 'window', 'xjson']
+__all__ = [ORM, 'alchemy', 'graph', 'query', 'window', 'xjson']
