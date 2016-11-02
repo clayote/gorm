@@ -24,6 +24,7 @@ class Cache(object):
         self.keycache = {}
         self.branches = StructuredDefaultDict(1, FuturistWindowDict)
         self.shallow = PickyDefaultDict(FuturistWindowDict)
+        self.shallower = {}
 
     def _forward_keycache(self, parentity, branch, rev):
         keycache_key = parentity + (branch,)
@@ -45,6 +46,7 @@ class Cache(object):
         self.keys[parent+(entity,)][key][branch][rev] = value
         self.branches[parent+(entity,key)][branch][rev] = value
         self.shallow[parent+(entity,key,branch)][rev] = value
+        self.shallower[parent+(entity,key,branch,rev)] = value
         self._forward_keycache(parent+(entity,), branch, rev)
         kc = self.keycache[parent+(entity, branch)]
         if rev in kc:
@@ -58,6 +60,10 @@ class Cache(object):
             kc[rev] = set([key])
 
     def retrieve(self, *args):
+        try:
+            return self.shallower[args]
+        except KeyError:
+            pass
         entity = args[:-3]
         key, branch, rev = args[-3:]
         if rev not in self.shallow[entity+(key, branch)]:
@@ -69,7 +75,8 @@ class Cache(object):
                     break
             else:
                 self.store(*entity+(key, branch, rev, None))
-        return self.shallow[entity+(key, branch)][rev]
+        ret = self.shallower[args] = self.shallow[entity+(key,branch)][rev]
+        return ret
 
     def iter_entities_or_keys(self, *args):
         entity = args[:-2]
@@ -92,6 +99,10 @@ class Cache(object):
             return 0
 
     def contains_entity_or_key(self, *args):
+        try:
+            return self.shallower[args] is not None
+        except KeyError:
+            pass
         entity = args[:-3]
         key, branch, rev = args[-3:]
         if key not in self.keys[entity]:
