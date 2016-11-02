@@ -48,16 +48,17 @@ class Cache(object):
         self.shallow[parent+(entity,key,branch)][rev] = value
         self.shallower[parent+(entity,key,branch,rev)] = value
         self._forward_keycache(parent+(entity,), branch, rev)
-        kc = self.keycache[parent+(entity, branch)]
-        if rev in kc:
-            if not kc.has_exact_rev(rev):
-                kc[rev] = kc[rev].copy()
-            if value is None:
-                kc[rev].discard(key)
+        self._forward_keycache((entity,), branch, rev)
+        for kc in self.keycache[parent+(entity, branch)], self.keycache[(entity, branch)]:
+            if rev in kc:
+                if not kc.has_exact_rev(rev):
+                    kc[rev] = kc[rev].copy()
+                if value is None:
+                    kc[rev].discard(key)
+                else:
+                    kc[rev].add(key)
             else:
-                kc[rev].add(key)
-        else:
-            kc[rev] = set([key])
+                kc[rev] = set([key])
 
     def retrieve(self, *args):
         try:
