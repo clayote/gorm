@@ -49,7 +49,11 @@ class Cache(object):
         self.shallower[parent+(entity,key,branch,rev)] = value
         self._forward_keycache(parent+(entity,), branch, rev)
         self._forward_keycache((entity,), branch, rev)
-        for kc in self.keycache[parent+(entity, branch)], self.keycache[(entity, branch)]:
+        keycached = None
+        for kc in self.keycache[parent+(entity,branch)], self.keycache[(entity,branch)]:
+            if kc is keycached:
+                return
+            keycached = kc
             if rev in kc:
                 if not kc.has_exact_rev(rev):
                     kc[rev] = kc[rev].copy()
