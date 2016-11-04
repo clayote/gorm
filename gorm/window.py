@@ -65,6 +65,11 @@ class WindowDict(MutableMapping):
         while self._past and self._past[-1][0] > rev:
             self._future.appendleft(self._past.pop())
 
+    def has_exact_rev(self, rev):
+        """Return whether I have a value at this exact revision, not just a previous one."""
+        self.seek(rev)
+        return self._past and self._past[-1][0] == rev
+
     def rev_before(self, rev):
         """Return the last rev prior to the given one on which the value changed."""
         self.seek(rev)
@@ -147,3 +152,36 @@ class WindowDict(MutableMapping):
 
     def __repr__(self):
         return "WindowDict({})".format(repr(dict(self)))
+
+
+class WindowDefaultDict(WindowDict):
+    __slots__ = ['_future', '_past', 'cls', 'args_munger', 'kwargs_munger']
+
+    def __init__(self, cls, args_munger=lambda k: tuple(), kwargs_munger=lambda k: {}, data={}):
+        super(WindowDefaultDict, self).__init__(data)
+        self.cls = cls
+        self.args_munger = args_munger
+        self.kwargs_munger = kwargs_munger
+
+    def __getitem__(self, k):
+        if k in self:
+            return super(WindowDefaultDict, self).__getitem__(k)
+        ret = self[k] = self.cls(*self.args_munger(k), **self.kwargs_munger(k))
+        return ret
+
+
+class FuturistWindowDict(WindowDict):
+    def __setitem__(self, rev, v):
+        if not self._past and not self._future:
+            self._past.append((rev, v))
+            return
+        if self._future:
+            self.seek(rev)
+        if self._future:
+            raise ValueError("Already have some history after {}".format(rev))
+        if not self._past or rev > self._past[-1][0]:
+            self._past.append((rev, v))
+        elif rev == self._past[-1][0]:
+            self._past[-1] = (rev, v)
+        else:
+            raise ValueError("Already have some history after {} (and my seek function is broken?)".format(rev))
