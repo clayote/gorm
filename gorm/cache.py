@@ -339,6 +339,7 @@ class Cache(object):
             return len(self.keycache[entity+(branch,)][rev])
         except KeyError:
             return 0
+    count_entities = count_keys = count_entity_keys = count_entities_or_keys
 
     def contains_entity_or_key(self, *args):
         try:
