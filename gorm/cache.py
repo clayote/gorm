@@ -185,6 +185,8 @@ class FuturistWindowDict(WindowDict):
             self._past[-1] = (rev, v)
         else:
             raise ValueError("Already have some history after {} (and my seek function is broken?)".format(rev))
+
+
 class PickyDefaultDict(dict):
     """A ``defaultdict`` alternative that requires values of a specific type.
     
