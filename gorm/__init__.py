@@ -42,6 +42,14 @@ class ORM(object):
         # I will be recursing a lot so just cache all the branch info
         if caching:
             self.caching = True
+            self._global_cache = self.db._global_cache = {}
+            for k, v in self.db.global_items():
+                if k == 'branch':
+                    self._obranch = v
+                elif k == 'rev':
+                    self._orev = v
+                else:
+                    self._global_cache[k] = v
             self._childbranch = defaultdict(set)
             self._parentbranch_rev = {}
             for (branch, parent, parent_rev) in self.db.all_branches():

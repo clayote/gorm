@@ -39,24 +39,35 @@ class GlobalKeyValueStore(MutableMapping):
 
     def __iter__(self):
         """Yield key field"""
+        if hasattr(self.qe, '_global_cache'):
+            yield from self.qe._global_cache
+            return
         for (k, v) in self.qe.global_items():
             yield k
 
     def __len__(self):
         """Count rows"""
+        if hasattr(self.qe, '_global_cache'):
+            return len(self.qe._global_cache)
         return self.qe.ctglobal()
 
     def __getitem__(self, k):
         """Return value field corresponding to key field"""
+        if hasattr(self.qe, '_global_cache'):
+            return self.qe._global_cache[k]
         return self.qe.global_get(k)
 
     def __setitem__(self, k, v):
         """Insert or update record with key ``k`` so it has value ``v``"""
         self.qe.global_set(k, v)
+        if hasattr(self.qe, '_global_cache'):
+            self.qe._global_cache[k] = v
 
     def __delitem__(self, k):
         """Delete record with key ``k``"""
         self.qe.global_del(k)
+        if hasattr(self.qe, '_global_cache'):
+            del self.qe._global_cache[k]
 
 
 class QueryEngine(object):
